@@ -1,0 +1,16 @@
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe.config
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.pdb
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.xml
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.xml
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.AssemblyReference.cache
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\XBit.LoginForm.resources
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X_BIT.Properties.Resources.resources
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.GenerateResource.cache
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.CoreCompileInputs.cache
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.Up2Date
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.pdb
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe.config
