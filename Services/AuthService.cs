@@ -2,22 +2,22 @@
 
 using System;
 using System.Data.SQLite;
-using XBit.Models;
-using System.Text;
 using System.Security.Cryptography;
-using System.Collections.Generic;
+using System.Text;
+using XBit.Models;
 
 namespace XBit.Services
 {
-    public class AuthService
+    public static class AuthService
     {
         public static User CurrentUser { get; private set; }
 
-        private static string HashPassword(string password)
+        // ⭐️ SHA256 해싱 메서드
+        public static string HashPassword(string password)
         {
-            using (SHA256 sha256Hash = SHA256.Create())
+            using (var sha256 = SHA256.Create())
             {
-                byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(password));
+                byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
                 StringBuilder builder = new StringBuilder();
                 for (int i = 0; i < bytes.Length; i++)
                 {
@@ -30,11 +30,11 @@ namespace XBit.Services
         public static bool Login(string username, string password)
         {
             string hashedPassword = HashPassword(password);
-
+            
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 conn.Open();
-                string sql = "SELECT Id, Username, PasswordHash, Name, Email, Role FROM Users WHERE Username = @u AND PasswordHash = @p";
+                string sql = "SELECT Id, Username, Name, Email, Role FROM Users WHERE Username = @u AND PasswordHash = @p";
 
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
@@ -49,17 +49,16 @@ namespace XBit.Services
                             {
                                 Id = reader.GetInt32(0),
                                 Username = reader.GetString(1),
-                                PasswordHash = reader.GetString(2),
-                                Name = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                Email = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                // UserRole 로드
-                                Role = (UserRole)reader.GetInt32(5)
+                                Name = reader.IsDBNull(2) ? null : reader.GetString(2),
+                                Email = reader.IsDBNull(3) ? null : reader.GetString(3),
+                                Role = (UserRole)reader.GetInt32(4)
                             };
                             return true;
                         }
                     }
                 }
             }
+
             return false;
         }
 
@@ -68,59 +67,93 @@ namespace XBit.Services
             CurrentUser = null;
         }
 
-        public static string Register(User newUser, string rawPassword)
+        public static string Register(User user, string password)
         {
-            newUser.PasswordHash = HashPassword(rawPassword);
-
+            string hashedPassword = HashPassword(password);
+            
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 try
                 {
                     conn.Open();
                     string sql = "INSERT INTO Users (Username, PasswordHash, Name, Email, Role) VALUES (@u, @p, @n, @e, @r)";
+
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@u", newUser.Username);
-                        cmd.Parameters.AddWithValue("@p", newUser.PasswordHash);
-                        cmd.Parameters.AddWithValue("@n", newUser.Name ?? "");
-                        cmd.Parameters.AddWithValue("@e", newUser.Email ?? "");
-                        // 회원가입 시 기본 Role은 Student(0)
-                        cmd.Parameters.AddWithValue("@r", (int)UserRole.Student);
+                        cmd.Parameters.AddWithValue("@u", user.Username);
+                        cmd.Parameters.AddWithValue("@p", hashedPassword);
+                        cmd.Parameters.AddWithValue("@n", user.Name ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@e", user.Email ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@r", (int)user.Role);
+
                         cmd.ExecuteNonQuery();
                     }
+
                     return null;
                 }
                 catch (SQLiteException ex)
                 {
-                    if (ex.Message.Contains("UNIQUE constraint failed"))
-                        return "오류: 사용자 이름이 이미 존재합니다.";
-                    if (ex.Message.Contains("NOT NULL constraint failed"))
-                        return "오류: 필수 입력 항목을 비워두었습니다.";
-                    return "DB 오류: " + ex.Message;
+                    if (ex.Message.Contains("UNIQUE"))
+                    {
+                        return "이미 존재하는 사용자 이름입니다.";
+                    }
+                    return "회원가입 실패: " + ex.Message;
                 }
             }
         }
 
+        public static User GetUserByEmail(string email)
+        {
+            using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
+            {
+                conn.Open();
+                string sql = "SELECT Id, Username, Name, Email, Role FROM Users WHERE Email = @e";
+
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@e", email);
+
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return new User
+                            {
+                                Id = reader.GetInt32(0),
+                                Username = reader.GetString(1),
+                                Name = reader.IsDBNull(2) ? null : reader.GetString(2),
+                                Email = reader.IsDBNull(3) ? null : reader.GetString(3),
+                                Role = (UserRole)reader.GetInt32(4)
+                            };
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
         public static bool UpdateUser(User user)
         {
-            if (user == null || CurrentUser == null || user.Id != CurrentUser.Id) return false;
-
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 try
                 {
                     conn.Open();
                     string sql = "UPDATE Users SET Name = @n, Email = @e WHERE Id = @id";
+
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@n", user.Name);
-                        cmd.Parameters.AddWithValue("@e", user.Email);
+                        cmd.Parameters.AddWithValue("@n", user.Name ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@e", user.Email ?? string.Empty);
                         cmd.Parameters.AddWithValue("@id", user.Id);
+
                         cmd.ExecuteNonQuery();
                     }
 
-                    CurrentUser.Name = user.Name;
-                    CurrentUser.Email = user.Email;
+                    if (CurrentUser != null && CurrentUser.Id == user.Id)
+                    {
+                        CurrentUser = user;
+                    }
 
                     return true;
                 }
@@ -132,7 +165,6 @@ namespace XBit.Services
             }
         }
 
-        // ⭐️ DeleteUser 메서드 수정: 게시물은 유지하고 사용자 정보만 삭제하는 '익명화 정책' 반영
         public static bool DeleteUser(int userId)
         {
             if (userId <= 0) return false;
@@ -142,7 +174,6 @@ namespace XBit.Services
                 try
                 {
                     conn.Open();
-                    // 사용자 정보만 삭제 (게시물은 남아 익명 처리됨)
                     string sql = "DELETE FROM Users WHERE Id = @id";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {

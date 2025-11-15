@@ -69,15 +69,8 @@ namespace XBit.Pages
 
         private void LoadAllAssignments()
         {
-            // ⚠️ _assignmentService.GetAssignmentsForUser() 메서드가 AssignmentService에 정의되어 있다고 가정합니다.
-            // allAssignments = _assignmentService.GetAssignmentsForUser(); 
-            // 임시 데이터 (실제 서비스 호출로 대체하세요)
-            allAssignments = new List<Assignment>()
-            {
-                new Assignment { Id = 1, Course = "C# WinForms", Title = "홈페이지 대시보드 UI 구현", DueDate = DateTime.Now.AddHours(12), Status = "미제출" },
-                new Assignment { Id = 2, Course = "SQLite DB", Title = "게시물 권한 및 삭제 기능 구현", DueDate = DateTime.Now.AddDays(3), Status = "제출 완료" },
-                new Assignment { Id = 3, Course = "Theme.cs", Title = "다크모드 버튼 스타일링", DueDate = DateTime.Now.AddDays(10), Status = "미제출" }
-            };
+            // ⭐️ 실제 DB에서 데이터 가져오기
+            allAssignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id);
         }
 
         // ⭐️ FilterData 메서드 유지 및 Home 카드 연동에 필요한 로직 반영

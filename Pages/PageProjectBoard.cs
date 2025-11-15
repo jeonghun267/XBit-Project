@@ -34,6 +34,7 @@ namespace XBit.Pages
         private FlowLayoutPanel sourceContainer = null;
 
         private TaskService _taskService = new TaskService();
+        private TeamService _teamService = new TeamService(); // ?? 추가
         private int currentTeamId = 1;  // 현재 선택된 팀 ID
 
         public PageProjectBoard()
@@ -520,18 +521,55 @@ namespace XBit.Pages
             string memberEmail = PromptDialog("멤버 이메일", "멤버 초대");
             if (!string.IsNullOrEmpty(memberEmail))
             {
-                MessageBox.Show("초대됨: " + memberEmail, "완료");
-                RefreshBoard();
+                // ?? 실제로 멤버 추가
+                var user = AuthService.GetUserByEmail(memberEmail);
+                
+                if (user != null)
+                {
+                    bool success = _teamService.AddMember(currentTeamId, user.Id);
+                    
+                    if (success)
+                    {
+                        MessageBox.Show($"{user.Name}({memberEmail})님이 팀에 초대되었습니다!", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        RefreshBoard();
+                    }
+                    else
+                    {
+                        MessageBox.Show("이미 팀 멤버이거나 초대할 수 없습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("해당 이메일의 사용자를 찾을 수 없습니다.\n사용자가 먼저 가입해야 합니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
         }
 
         private void BtnAddTask_Click(object sender, EventArgs e)
         {
-            string taskTitle = PromptDialog("작업 제목", "새 작업 추가");
-            if (!string.IsNullOrEmpty(taskTitle))
+            // ?? 향상된 작업 추가 다이얼로그
+            using (var dialog = new TaskAddDialog())
             {
-                MessageBox.Show("작업 '" + taskTitle + "'이(가) 추가되었습니다.", "완료");
-                RefreshBoard();
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    bool success = _taskService.AddTask(
+                        dialog.TaskTitle,
+                        dialog.Assignee,
+                        dialog.Priority,
+                        "할 일",
+                        currentTeamId
+                    );
+
+                    if (success)
+                    {
+                        MessageBox.Show("작업이 추가되었습니다!", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        RefreshBoard();
+                    }
+                    else
+                    {
+                        MessageBox.Show("작업 추가 실패!", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
             }
         }
 
@@ -547,10 +585,28 @@ namespace XBit.Pages
 
         private void LoadTeams()
         {
-            cmbTeams.Items.Add("개발팀");
-            cmbTeams.Items.Add("디자인팀");
-            cmbTeams.Items.Add("마케팅팀");
-            cmbTeams.SelectedIndex = 0;
+            // ?? 실제 DB에서 팀 목록 가져오기
+            var teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+            
+            cmbTeams.Items.Clear();
+            
+            if (teams.Count == 0)
+            {
+                // 기본 팀 생성
+                int teamId = _teamService.CreateTeam("내 팀", AuthService.CurrentUser.Id);
+                teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+            }
+            
+            foreach (var team in teams)
+            {
+                cmbTeams.Items.Add(team.Name);
+                cmbTeams.Tag = team.Id; // 마지막 팀 ID 저장
+            }
+            
+            if (cmbTeams.Items.Count > 0)
+            {
+                cmbTeams.SelectedIndex = 0;
+            }
 
             AddSampleTasks();
         }

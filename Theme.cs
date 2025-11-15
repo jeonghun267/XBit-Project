@@ -1,4 +1,4 @@
-﻿// XBit/Theme.cs (최종 수정본 - DataGrid SelectionForeColor 화이트로 고정)
+﻿// XBit/Theme.cs (Primary 속성 추가)
 
 using System;
 using System.Drawing;
@@ -20,13 +20,17 @@ namespace XBit
         public static Color BgCard => Current == AppTheme.Dark ? Color.FromArgb(42, 45, 50) : Color.White;
 
         public static Color FgDefault => Current == AppTheme.Dark ? Color.White : Color.Black;
-
         public static Color FgPrimary => Current == AppTheme.Dark ? Color.Gainsboro : Color.Black;
         public static Color FgMuted => Current == AppTheme.Dark ? Color.Silver : Color.DimGray;
+        
         public static Color Hover => Current == AppTheme.Dark ? Color.FromArgb(53, 57, 63) : Color.FromArgb(236, 239, 244);
         public static Color Selected => Current == AppTheme.Dark ? Color.FromArgb(60, 65, 72) : Color.FromArgb(232, 235, 241);
         public static Color Border => Current == AppTheme.Dark ? Color.FromArgb(65, 70, 78) : Color.FromArgb(228, 231, 235);
+        
+        // ⭐️ Primary 색상 추가
+        public static Color Primary => Color.FromArgb(66, 133, 244); // Blue
         public static Color Accent => Color.FromArgb(66, 133, 244);
+        public static Color Danger => Color.FromArgb(244, 67, 54); // Red
 
         public static void Set(AppTheme t)
         {
@@ -35,7 +39,7 @@ namespace XBit
             ThemeChanged?.Invoke();
         }
 
-        // ===== Styling helpers (유지) =====
+        // ===== Styling helpers =====
         public static void StyleCard(Panel p)
         {
             p.BackColor = BgCard;
@@ -95,7 +99,7 @@ namespace XBit
         {
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = 0;
-            b.BackColor = Accent;
+            b.BackColor = Primary; // ⭐️ Accent 대신 Primary 사용
             b.ForeColor = Color.White;
             b.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
             b.Height = 36;
@@ -108,7 +112,6 @@ namespace XBit
             prop?.SetValue(c, true, null);
         }
 
-        // ===== Apply theme to control tree (DataGrid 스타일 수정) =====
         public static void Apply(Control root)
         {
             void Walk(Control c)
@@ -140,7 +143,7 @@ namespace XBit
                         g.DefaultCellStyle.BackColor = BgCard;
                         g.DefaultCellStyle.ForeColor = FgDefault;
                         g.DefaultCellStyle.SelectionBackColor = Accent;
-                        g.DefaultCellStyle.SelectionForeColor = Color.White; // ⭐️ 선택된 행 글자색은 흰색으로 고정
+                        g.DefaultCellStyle.SelectionForeColor = Color.White;
                         g.GridColor = Border;
                         break;
                     case TextBox tb:

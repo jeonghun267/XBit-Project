@@ -30,3 +30,4 @@ C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.xml
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.Up2Date
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.pdb
+C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe.config

@@ -1,4 +1,4 @@
-﻿// Pages/PageHome.cs (중복 변수 제거)
+﻿// Pages/PageHome.cs (유니코드 제거)
 
 using System.Drawing;
 using System.Windows.Forms;
@@ -27,7 +27,6 @@ namespace XBit.Pages
             InitializeLayout();
             LoadData();
 
-            // 테마 변경 시 카드 스타일 업데이트
             Theme.ThemeChanged += () =>
             {
                 BackColor = Theme.BgMain;
@@ -48,7 +47,6 @@ namespace XBit.Pages
 
         private void InitializeLayout()
         {
-            // 상단 헤더 패널
             var pnlHeader = new Panel
             {
                 Dock = DockStyle.Top,
@@ -59,7 +57,7 @@ namespace XBit.Pages
 
             var lblPageTitle = new Label
             {
-                Text = "📊 대시보드",
+                Text = "[대시보드]",
                 Font = new Font("맑은 고딕", 16f, FontStyle.Bold),
                 ForeColor = Theme.FgDefault,
                 AutoSize = true,
@@ -68,7 +66,7 @@ namespace XBit.Pages
 
             btnRefresh = new Button
             {
-                Text = "🔄 새로고침",
+                Text = "[새로고침]",
                 Width = 120,
                 Height = 35,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
@@ -85,7 +83,6 @@ namespace XBit.Pages
             pnlHeader.Controls.Add(lblPageTitle);
             pnlHeader.Controls.Add(btnRefresh);
 
-            // 카드 컨테이너
             wrap = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -96,7 +93,6 @@ namespace XBit.Pages
             };
             Theme.EnableDoubleBuffer(wrap);
 
-            // 카드 초기 생성
             wrap.Controls.Add(MakeCard("오늘 마감 임박", "데이터 로드 중...", "card_due_today"));
             wrap.Controls.Add(MakeCard("이번 주 과제", "데이터 로드 중...", "card_due_week"));
             wrap.Controls.Add(MakeCard("깃허브 알림", "데이터 로드 중...", "card_github"));
@@ -163,18 +159,15 @@ namespace XBit.Pages
             return card;
         }
 
-        // ⭐️ 새로고침 버튼: GitHub 자동 동기화 추가
         private async void BtnRefresh_Click(object sender, EventArgs e)
         {
             btnRefresh.Enabled = false;
-            btnRefresh.Text = "⏳ 동기화 중...";
+            btnRefresh.Text = "[동기화 중...]";
 
             try
             {
-                // 1. 로컬 데이터 로드
                 LoadData();
 
-                // 2. GitHub에 변경사항이 있는지 확인
                 int changedFiles = _githubService.GetChangedFilesCount();
 
                 if (changedFiles > 0)
@@ -188,14 +181,14 @@ namespace XBit.Pages
 
                     if (result == DialogResult.Yes)
                     {
-                        btnRefresh.Text = "⏳ GitHub 푸시 중...";
+                        btnRefresh.Text = "[GitHub 푸시 중...]";
                         
                         bool success = await _githubService.SyncAllChanges();
 
                         if (success)
                         {
                             MessageBox.Show(
-                                $"✅ {changedFiles}개 파일이 GitHub에 업로드되었습니다!",
+                                $"[완료] {changedFiles}개 파일이 GitHub에 업로드되었습니다!",
                                 "동기화 완료",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Information
@@ -217,7 +210,6 @@ namespace XBit.Pages
                     MessageBox.Show("변경된 파일이 없습니다.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
 
-                // 3. 카드 업데이트 시간 갱신
                 foreach (Control c in wrap.Controls)
                 {
                     if (c is Panel card)
@@ -237,19 +229,13 @@ namespace XBit.Pages
             finally
             {
                 btnRefresh.Enabled = true;
-                btnRefresh.Text = "🔄 새로고침";
+                btnRefresh.Text = "[새로고침]";
             }
         }
 
         private void LoadData()
         {
-            // ⭐️ 변수 재선언 제거 - 한 번만 선언
-            List<Assignment> assignments = new List<Assignment>()
-            {
-                new Assignment { Id = 1, Course = "C# WinForms", Title = "UI 구현", DueDate = DateTime.Now.AddHours(12), Status = "미제출" },
-                new Assignment { Id = 2, Course = "SQLite DB", Title = "게시물 권한", DueDate = DateTime.Now.AddDays(3), Status = "제출 완료" },
-                new Assignment { Id = 3, Course = "Theme.cs", Title = "버튼 스타일링", DueDate = DateTime.Now.AddDays(10), Status = "미제출" }
-            };
+            List<Assignment> assignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id);
 
             DateTime now = DateTime.Now;
             var dueTodayCount = assignments.Count(a => (a.DueDate - now).TotalHours <= 24 && (a.DueDate - now).TotalHours > 0 && a.Status != "제출 완료");
@@ -265,18 +251,17 @@ namespace XBit.Pages
             UpdateCardText("card_due_today", $"총 {dueTodayCount}건 (24시간 이내)");
             UpdateCardText("card_due_week", $"총 {dueThisWeek.Count}건 (제출 {submittedThisWeekCount})");
 
-            // GitHub 변경사항 개수 표시
             int changedFiles = _githubService.GetChangedFilesCount();
             
             if (!string.IsNullOrWhiteSpace(githubUser) && !string.IsNullOrWhiteSpace(SettingsService.Current.Integrations.GitHubToken))
             {
                 if (changedFiles > 0)
                 {
-                    UpdateCardText("card_github", $"🔔 변경된 파일: {changedFiles}개\n클릭하여 업로드");
+                    UpdateCardText("card_github", $"[알림] 변경된 파일: {changedFiles}개\n클릭하여 업로드");
                 }
                 else
                 {
-                    UpdateCardText("card_github", $"✅ GitHub 연동됨\n변경사항 없음");
+                    UpdateCardText("card_github", $"[완료] GitHub 연동됨\n변경사항 없음");
                 }
             }
             else
