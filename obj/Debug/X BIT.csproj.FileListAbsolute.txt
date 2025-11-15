@@ -1,16 +1,32 @@
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe.config
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.pdb
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.dll
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.dll
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.xml
-C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.xml
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.AssemblyReference.cache
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\XBit.LoginForm.resources
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X_BIT.Properties.Resources.resources
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.GenerateResource.cache
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.CoreCompileInputs.cache
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\win32\x86\git2-3f4182d.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\win32\x64\git2-3f4182d.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\win32\arm64\git2-3f4182d.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-arm64\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-arm\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-musl-arm64\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-musl-arm\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-musl-x64\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-ppc64le\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\linux-x64\libgit2-3f4182d.so
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\osx-arm64\libgit2-3f4182d.dylib
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\lib\osx-x64\libgit2-3f4182d.dylib
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\LibGit2Sharp.dll.config
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe.config
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.exe
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\X BIT.pdb
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\LibGit2Sharp.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Octokit.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.dll
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\LibGit2Sharp.xml
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Newtonsoft.Json.xml
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\Octokit.xml
+C:\Users\1\source\repos\X BIT\X BIT\bin\Debug\System.Data.SQLite.xml
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.csproj.Up2Date
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe
 C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.pdb
-C:\Users\1\source\repos\X BIT\X BIT\obj\Debug\X BIT.exe.config

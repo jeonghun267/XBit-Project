@@ -1,10 +1,10 @@
-﻿// XBit/Services/DatabaseManager.cs (최종 전체 코드)
+﻿// XBit/Services/DatabaseManager.cs (인덱스 추가)
 
 using System;
 using System.Data.SQLite;
 using System.IO;
 using System.Text;
-using XBit.Models; // ⭐️ UserRole 사용을 위해 필요
+using XBit.Models;
 
 namespace XBit.Services
 {
@@ -18,23 +18,19 @@ namespace XBit.Services
             string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DbFile);
             ConnectionString = $"Data Source={dbPath};Version=3;";
 
-            // 디렉터리 보장
             var dir = Path.GetDirectoryName(dbPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
             }
 
-            // DB 파일이 없으면 생성
             if (!File.Exists(dbPath))
             {
                 SQLiteConnection.CreateFile(dbPath);
             }
 
-            // 항상 테이블 존재를 보장(이미 있으면 무시)
             CreateTables();
-
-            // 초기 데이터는 Users 테이블이 비어있을 때만 추가
+            CreateIndexes(); // ⭐️ 인덱스 생성 추가
             AddInitialDataIfNeeded();
         }
 
@@ -44,7 +40,7 @@ namespace XBit.Services
             {
                 conn.Open();
 
-                // 1. Users 테이블 (Role 컬럼 포함)
+                // 1. Users 테이블
                 string sqlUsers = @"
                     CREATE TABLE IF NOT EXISTS Users (
                         Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +77,7 @@ namespace XBit.Services
                     );";
                 using (var cmd = new SQLiteCommand(sqlPosts, conn)) { cmd.ExecuteNonQuery(); }
 
-                // 4. Comments 테이블 (댓글 기능)
+                // 4. Comments 테이블
                 string sqlComments = @"
                     CREATE TABLE IF NOT EXISTS Comments (
                         Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,10 +85,95 @@ namespace XBit.Services
                         AuthorId INTEGER NOT NULL,
                         Content TEXT NOT NULL,
                         CreatedDate TEXT NOT NULL,
+                        Likes INTEGER DEFAULT 0,
                         FOREIGN KEY(PostId) REFERENCES Posts(Id),
                         FOREIGN KEY(AuthorId) REFERENCES Users(Id)
                     );";
                 using (var cmd = new SQLiteCommand(sqlComments, conn)) { cmd.ExecuteNonQuery(); }
+
+                // 5. Tasks 테이블
+                string sqlTasks = @"
+                    CREATE TABLE IF NOT EXISTS Tasks (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Title TEXT NOT NULL,
+                        Assignee TEXT NOT NULL,
+                        Priority INTEGER NOT NULL,
+                        Status TEXT NOT NULL,
+                        TeamId INTEGER NOT NULL,
+                        CreatedDate TEXT NOT NULL
+                    );";
+                using (var cmd = new SQLiteCommand(sqlTasks, conn)) { cmd.ExecuteNonQuery(); }
+            }
+        }
+
+        // ⭐️ 인덱스 생성 메서드 추가
+        private static void CreateIndexes()
+        {
+            using (var conn = new SQLiteConnection(ConnectionString))
+            {
+                conn.Open();
+
+                // Comments 테이블의 PostId에 인덱스 생성 (경고 해결)
+                string sqlIndexCommentPostId = @"
+                    CREATE INDEX IF NOT EXISTS idx_comments_postid 
+                    ON Comments(PostId);";
+                using (var cmd = new SQLiteCommand(sqlIndexCommentPostId, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                // Comments 테이블의 AuthorId에도 인덱스 추가 (추가 최적화)
+                string sqlIndexCommentAuthorId = @"
+                    CREATE INDEX IF NOT EXISTS idx_comments_authorid 
+                    ON Comments(AuthorId);";
+                using (var cmd = new SQLiteCommand(sqlIndexCommentAuthorId, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                // Posts 테이블의 AuthorId에 인덱스
+                string sqlIndexPostAuthorId = @"
+                    CREATE INDEX IF NOT EXISTS idx_posts_authorid 
+                    ON Posts(AuthorId);";
+                using (var cmd = new SQLiteCommand(sqlIndexPostAuthorId, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                // Assignments 테이블의 UserId에 인덱스
+                string sqlIndexAssignmentUserId = @"
+                    CREATE INDEX IF NOT EXISTS idx_assignments_userid 
+                    ON Assignments(UserId);";
+                using (var cmd = new SQLiteCommand(sqlIndexAssignmentUserId, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                // Tasks 테이블의 TeamId에 인덱스
+                string sqlIndexTaskTeamId = @"
+                    CREATE INDEX IF NOT EXISTS idx_tasks_teamid 
+                    ON Tasks(TeamId);";
+                using (var cmd = new SQLiteCommand(sqlIndexTaskTeamId, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                // ⭐️ 날짜 기반 검색을 위한 인덱스
+                string sqlIndexAssignmentDueDate = @"
+                    CREATE INDEX IF NOT EXISTS idx_assignments_duedate 
+                    ON Assignments(DueDate);";
+                using (var cmd = new SQLiteCommand(sqlIndexAssignmentDueDate, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
+
+                string sqlIndexPostCreatedDate = @"
+                    CREATE INDEX IF NOT EXISTS idx_posts_createddate 
+                    ON Posts(CreatedDate);";
+                using (var cmd = new SQLiteCommand(sqlIndexPostCreatedDate, conn)) 
+                { 
+                    cmd.ExecuteNonQuery(); 
+                }
             }
         }
 
@@ -102,7 +183,6 @@ namespace XBit.Services
             {
                 conn.Open();
 
-                // Users 테이블에 행이 있는지 확인
                 using (var checkCmd = new SQLiteCommand("SELECT COUNT(1) FROM Users;", conn))
                 {
                     object result = null;
@@ -114,7 +194,7 @@ namespace XBit.Services
 
                     if (result == null || Convert.ToInt32(result) == 0)
                     {
-                        // 1. 테스트 관리자 사용자 추가 (ID=test, PW=1234, Role=1)
+                        // 1. 테스트 관리자 사용자 추가
                         string userSql = "INSERT INTO Users (Username, PasswordHash, Name, Role) VALUES (@u, @p, @n, @r); SELECT last_insert_rowid();";
                         int userId;
                         using (var cmd = new SQLiteCommand(userSql, conn))
@@ -122,12 +202,11 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@u", "test");
                             cmd.Parameters.AddWithValue("@p", "1234");
                             cmd.Parameters.AddWithValue("@n", "관리자_정훈");
-                            // ⭐️ UserRole.Admin 사용 (오류 해결)
                             cmd.Parameters.AddWithValue("@r", (int)UserRole.Admin);
                             userId = Convert.ToInt32(cmd.ExecuteScalar());
                         }
 
-                        // 2. 테스트 과제 추가 (기존 로직 유지)
+                        // 2. 테스트 과제 추가
                         string assignmentSql = "INSERT INTO Assignments (Course, Title, DueDate, Status, UserId) VALUES (@c, @t, @d, @s, @uid)";
                         using (var cmd = new SQLiteCommand(assignmentSql, conn))
                         {
@@ -154,20 +233,17 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@t", "환영합니다! 첫 게시글입니다.");
                             cmd.Parameters.AddWithValue("@c", "XBit 프로젝트 게시판 사용을 시작합니다.");
                             cmd.Parameters.AddWithValue("@aid", userId);
-                            // ⭐️ 오류 해결: DateTime.Now.Now -> DateTime.Now로 수정
                             cmd.Parameters.AddWithValue("@cd", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.ExecuteNonQuery();
                         }
                     }
                 }
             }
-        }
+        }   
 
-        // 진단용 메서드 (기존 로직 유지)
         public static string DumpDatabaseInfo()
         {
-            // ... (DumpDatabaseInfo 로직 유지) ...
-            return ""; // 실제 로직이 복잡하므로 반환값만 명시
+            return "";
         }
     }
 }

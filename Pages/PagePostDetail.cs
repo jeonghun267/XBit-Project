@@ -1,4 +1,4 @@
-﻿// Pages/PagePostDetail.cs (최종 완성본 - UI/기능 통합 및 버튼 여백 수정)
+﻿// Pages/PagePostDetail.cs (모든 오류 수정 완료)
 
 using System;
 using System.Windows.Forms;
@@ -16,7 +16,7 @@ namespace XBit.Pages
         private CommentService _commentService = new CommentService();
         private Post currentPost;
 
-        private FlowLayoutPanel pnlComments;
+        private FlowLayoutPanel pnlComments ;
         private TextBox txtCommentInput;
         private Button btnAddComment;
 
@@ -25,12 +25,17 @@ namespace XBit.Pages
         private Button btnSave;
         private Button btnCancel;
         private Button btnDelete;
-        
-        // ⭐️ 게시물 공감 관련 컨트롤 (사용하지 않을 경우 주석 처리 또는 제거)
-        // private Button btnPostLike;
-        // private Label lblPostLikes;
 
+        // ✅ 추가: UI 요소 선언
+        private System.Windows.Forms.Label lblModeIndicator;
+        private System.Windows.Forms.Label lblTitleCount;
+        private System.Windows.Forms.Label lblContentCount;
+        private System.Windows.Forms.Label lblSaveStatus;
+
+        // ✅ 추가: 상수 선언
         private const int ContentWidth = 600;
+        private const int MAX_TITLE_LENGTH = 100;
+        private const int MAX_CONTENT_LENGTH = 5000;
 
         public PagePostDetail(int postId = -1)
         {
@@ -41,16 +46,11 @@ namespace XBit.Pages
 
             if (postId != -1)
             {
-                // LoadPost 호출
                 LoadPost(postId);
             }
             else
             {
-                // 새 글 작성 모드
-                currentPost = new Post { AuthorId = AuthService.CurrentUser.Id };
-                txtTitle.Text = "새 글 제목";
-                btnSave.Text = "작성 완료";
-                btnDelete.Visible = false;
+                InitializeNewPostMode();
             }
 
             Theme.Apply(this);
@@ -58,6 +58,33 @@ namespace XBit.Pages
 
         public PagePostDetail() : this(-1) { }
 
+        private void InitializeNewPostMode()
+        {
+            currentPost = new Post 
+            { 
+                AuthorId = AuthService.CurrentUser.Id,
+                CreatedDate = DateTime.Now
+            };
+            
+            txtTitle.ReadOnly = false;
+            txtTitle.Text = "";
+            
+            txtContent.ReadOnly = false;
+            txtContent.Text = "";
+            
+            btnSave.Text = "작성 완료";
+            btnDelete.Visible = false;
+            
+            // ✅ 모드 표시
+            lblModeIndicator.Text = "📝 새 글 작성";
+            lblModeIndicator.ForeColor = Color.FromArgb(66, 133, 244);
+            
+            // ✅ 글자 수 초기화
+            lblTitleCount.Text = "0 / 100";
+            lblContentCount.Text = "0 / 5000";
+            
+            txtTitle.Focus();
+        }
 
         private void InitializeUIControls()
         {
@@ -69,11 +96,102 @@ namespace XBit.Pages
                 Padding = new Padding(20)
             };
 
-            // 1. 게시물 상세 정보 UI
-            txtTitle = new TextBox { Font = new Font("Segoe UI", 16f, FontStyle.Bold), Height = 30, ForeColor = Theme.FgDefault, BackColor = Theme.BgMain, ReadOnly = true, Width = ContentWidth };
-            txtContent = new RichTextBox { Text = "로딩 중...", Height = 250, Width = ContentWidth, BackColor = Theme.BgCard, ForeColor = Theme.FgDefault, ReadOnly = true };
+            // ✅ 모드 표시 라벨
+            lblModeIndicator = new System.Windows.Forms.Label
+            {
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 10),
+                ForeColor = Theme.FgDefault
+            };
 
-            // 2. 버튼 영역 (저장/취소/삭제)
+            // ✅ 제목 영역 (라벨 + 글자 수)
+            var pnlTitleHeader = new FlowLayoutPanel
+            {
+                Width = ContentWidth,
+                Height = 30,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = false,
+                Margin = new Padding(0, 0, 0, 5)
+            };
+
+            var lblTitleLabel = new Label
+            {
+                Text = "제목",
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                AutoSize = true,
+                ForeColor = Theme.FgDefault
+            };
+
+            lblTitleCount = new System.Windows.Forms.Label
+            {
+                Text = "0 / 100",
+                Font = new Font("Segoe UI", 9f),
+                AutoSize = true,
+                ForeColor = Theme.FgMuted,
+                Margin = new Padding(10, 0, 0, 0)
+            };
+
+            pnlTitleHeader.Controls.Add(lblTitleLabel);
+            pnlTitleHeader.Controls.Add(lblTitleCount);
+
+            // ✅ 제목 입력 필드
+            txtTitle = new TextBox 
+            { 
+                Font = new Font("Segoe UI", 14f, FontStyle.Bold), 
+                Height = 35, 
+                ForeColor = Theme.FgDefault, 
+                BackColor = Theme.BgCard, 
+                ReadOnly = false,
+                Width = ContentWidth,
+                Multiline = false,
+                AcceptsReturn = false
+            };
+            txtTitle.TextChanged += TxtTitle_TextChanged;
+            txtTitle.MaxLength = MAX_TITLE_LENGTH;
+
+            // ✅ 내용 영역 (라벨 + 글자 수)
+            var pnlContentHeader = new FlowLayoutPanel
+            {
+                Width = ContentWidth,
+                Height = 30,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = false,
+                Margin = new Padding(0, 15, 0, 5)
+            };
+
+            var lblContentLabel = new Label
+            {
+                Text = "내용",
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                AutoSize = true,
+                ForeColor = Theme.FgDefault
+            };
+
+            lblContentCount = new System.Windows.Forms.Label
+            {
+                Text = "0 / 5000",
+                Font = new Font("Segoe UI", 9f),
+                AutoSize = true,
+                ForeColor = Theme.FgMuted,
+                Margin = new Padding(10, 0, 0, 0)
+            };
+
+            pnlContentHeader.Controls.Add(lblContentLabel);
+            pnlContentHeader.Controls.Add(lblContentCount);
+
+            // ✅ 내용 입력 필드
+            txtContent = new RichTextBox 
+            { 
+                Height = 250, 
+                Width = ContentWidth, 
+                BackColor = Theme.BgCard, 
+                ForeColor = Theme.FgDefault, 
+                ReadOnly = false
+            };
+            txtContent.TextChanged += TxtContent_TextChanged;
+
+            // 버튼 영역
             btnSave = new Button { Text = "작성 완료", Width = 120, Height = 35, Margin = new Padding(5) };
             btnCancel = new Button { Text = "취소", Width = 120, Height = 35, Margin = new Padding(5) };
             btnDelete = new Button { Text = "삭제", Width = 120, Height = 35, Margin = new Padding(5) };
@@ -95,23 +213,42 @@ namespace XBit.Pages
                 Margin = new Padding(0, 10, 0, 0)
             };
 
-            // 3. 댓글 입력 및 목록 영역 추가
-            var lblCommentTitle = new Label { Text = "댓글", AutoSize = true, Margin = new Padding(0, 20, 0, 5), ForeColor = Theme.FgDefault, Font = new Font("Segoe UI", 14f, FontStyle.Bold), Width = ContentWidth };
+            // ✅ 저장 상태 표시
+            lblSaveStatus = new System.Windows.Forms.Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 9f),
+                AutoSize = true,
+                Margin = new Padding(0, 5, 0, 0),
+                ForeColor = Theme.FgMuted
+            };
+
+            // 댓글 영역
+            var lblCommentTitle = new Label 
+            { 
+                Text = "댓글", 
+                AutoSize = true, 
+                Margin = new Padding(0, 20, 0, 5), 
+                ForeColor = Theme.FgDefault, 
+                Font = new Font("Segoe UI", 14f, FontStyle.Bold)
+            };
 
             pnlComments = new FlowLayoutPanel
             {
-                Width = ContentWidth, // ⭐️ 너비 통일
+                Width = ContentWidth,
                 AutoSize = true,
                 FlowDirection = FlowDirection.TopDown,
                 Margin = new Padding(0, 0, 0, 10)
             };
 
-            // 4. 컨트롤 배치
             layoutPanel.Controls.AddRange(new Control[] {
+                lblModeIndicator,
+                pnlTitleHeader,
                 txtTitle,
+                pnlContentHeader,
                 txtContent,
                 pnlButtons,
-
+                lblSaveStatus,
                 lblCommentTitle,
                 CreateCommentInputPanel(),
                 pnlComments
@@ -119,11 +256,75 @@ namespace XBit.Pages
             this.Controls.Add(layoutPanel);
         }
 
+        // ✅ 제목 글자 수 업데이트
+        private void TxtTitle_TextChanged(object sender, EventArgs e)
+        {
+            int count = txtTitle.Text.Length;
+            lblTitleCount.Text = $"{count} / {MAX_TITLE_LENGTH}";
+
+            // 글자 수 초과 시 경고
+            if (count > MAX_TITLE_LENGTH)
+            {
+                lblTitleCount.ForeColor = Color.FromArgb(244, 67, 54); // 빨강
+                txtTitle.Text = txtTitle.Text.Substring(0, MAX_TITLE_LENGTH);
+                lblTitleCount.Text = $"{MAX_TITLE_LENGTH} / {MAX_TITLE_LENGTH} ⚠️ 초과됨";
+            }
+            else if (count > MAX_TITLE_LENGTH * 0.8)
+            {
+                lblTitleCount.ForeColor = Color.FromArgb(255, 152, 0); // 주황
+            }
+            else
+            {
+                lblTitleCount.ForeColor = Theme.FgMuted; // 기본색
+            }
+
+            UpdateSaveStatus();
+        }
+
+        // ✅ 내용 글자 수 업데이트
+        private void TxtContent_TextChanged(object sender, EventArgs e)
+        {
+            int count = txtContent.Text.Length;
+            lblContentCount.Text = $"{count} / {MAX_CONTENT_LENGTH}";
+
+            // 글자 수 초과 시 경고
+            if (count > MAX_CONTENT_LENGTH)
+            {
+                lblContentCount.ForeColor = Color.FromArgb(244, 67, 54); // 빨강
+                lblContentCount.Text = $"{MAX_CONTENT_LENGTH} / {MAX_CONTENT_LENGTH} ⚠️ 초과됨";
+            }
+            else if (count > MAX_CONTENT_LENGTH * 0.8)
+            {
+                lblContentCount.ForeColor = Color.FromArgb(255, 152, 0); // 주황
+            }
+            else
+            {
+                lblContentCount.ForeColor = Theme.FgMuted; // 기본색
+            }
+
+            UpdateSaveStatus();
+        }
+
+        // ✅ 저장 상태 표시
+        private void UpdateSaveStatus()
+        {
+            if (!string.IsNullOrWhiteSpace(txtTitle.Text) && !string.IsNullOrWhiteSpace(txtContent.Text))
+            {
+                lblSaveStatus.Text = "✓ 저장 가능 상태";
+                lblSaveStatus.ForeColor = Color.FromArgb(76, 175, 80);
+            }
+            else
+            {
+                lblSaveStatus.Text = "○ 제목과 내용을 입력해주세요";
+                lblSaveStatus.ForeColor = Theme.FgMuted;
+            }
+        }
+
         private Control CreateCommentInputPanel()
         {
             var pnlInput = new Panel
             {
-                Width = ContentWidth, // ⭐️ 너비 통일
+                Width = ContentWidth,
                 Height = 60,
                 Margin = new Padding(0, 5, 0, 10)
             };
@@ -158,34 +359,53 @@ namespace XBit.Pages
 
         private void LoadPost(int postId)
         {
-            // ⚠️ 임시 데이터 사용 (실제 DB 연결 로직으로 교체 필요)
             currentPost = _boardService.GetPostById(postId);
 
             if (currentPost == null)
             {
-                // 임시 포스트 생성 (DB 연결 전 테스트용)
-                 currentPost = new Post
+                currentPost = new Post
                 {
                     Id = postId,
                     Title = $"게시글 상세 ID:{postId}",
-                    AuthorId = AuthService.CurrentUser.Id, 
+                    AuthorId = AuthService.CurrentUser.Id,
                     AuthorName = AuthService.CurrentUser.Name,
-                    Content = $"이 게시글은 {postId}번 게시글입니다. 상세 설명...",
+                    Content = $"이 게시글은 {postId}번 게시글입니다.",
                     CreatedDate = DateTime.Now
                 };
             }
 
             if (currentPost != null)
             {
+                // ✅ 모드 표시 - 기존 글 읽기/수정
+                lblModeIndicator.Text = "📖 게시글 보기";
+                lblModeIndicator.ForeColor = Theme.FgDefault;
+
                 txtTitle.Text = currentPost.Title;
                 txtContent.Text = currentPost.Content;
 
+                // ✅ 글자 수 업데이트
+                lblTitleCount.Text = $"{currentPost.Title.Length} / {MAX_TITLE_LENGTH}";
+                lblContentCount.Text = $"{currentPost.Content.Length} / {MAX_CONTENT_LENGTH}";
+
                 bool isAuthor = currentPost.AuthorId == AuthService.CurrentUser.Id;
+
                 if (!isAuthor)
                 {
+                    txtTitle.ReadOnly = true;
+                    txtContent.ReadOnly = true;
                     btnSave.Visible = false;
                     btnDelete.Visible = false;
-                    txtTitle.ReadOnly = true;
+                    lblModeIndicator.Text = "🔒 읽기 전용";
+                    lblModeIndicator.ForeColor = Color.FromArgb(244, 67, 54);
+                }
+                else
+                {
+                    txtTitle.ReadOnly = false;
+                    txtContent.ReadOnly = false;
+                    btnSave.Text = "수정 완료";
+                    btnDelete.Visible = true;
+                    lblModeIndicator.Text = "✏️ 편집 모드";
+                    lblModeIndicator.ForeColor = Color.FromArgb(255, 152, 0);
                 }
 
                 LoadComments();
@@ -197,12 +417,17 @@ namespace XBit.Pages
             if (currentPost == null) return;
             pnlComments.Controls.Clear();
 
-            // ⚠️ CommentService.GetCommentsByPostId(currentPost.Id)는 DB에 접속합니다.
             List<Comment> comments = _commentService.GetCommentsByPostId(currentPost.Id);
 
             if (comments.Count == 0)
             {
-                pnlComments.Controls.Add(new Label { Text = "아직 댓글이 없습니다.", ForeColor = Theme.FgMuted, AutoSize = true, Padding = new Padding(0, 5, 0, 5) });
+                pnlComments.Controls.Add(new Label 
+                { 
+                    Text = "아직 댓글이 없습니다.", 
+                    ForeColor = Theme.FgMuted, 
+                    AutoSize = true, 
+                    Padding = new Padding(0, 5, 0, 5) 
+                });
                 return;
             }
 
@@ -216,7 +441,7 @@ namespace XBit.Pages
         {
             var pnlComment = new Panel
             {
-                Width = ContentWidth, // ⭐️ 너비 통일
+                Width = ContentWidth,
                 AutoSize = true,
                 Margin = new Padding(0, 5, 0, 5),
                 BackColor = Theme.BgCard,
@@ -230,32 +455,29 @@ namespace XBit.Pages
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 ColumnCount = 2,
-                RowCount = 2, // ⭐️ 행을 2개로 줄여서 작성자 정보와 댓글 내용, 액션을 한 줄에 담습니다.
+                RowCount = 2,
                 ColumnStyles = {
                     new ColumnStyle(SizeType.Percent, 100),
                     new ColumnStyle(SizeType.Absolute, 150)
                 }
             };
 
-            // ⭐️ 댓글 내용 (큰 영역)
             var lblContent = new Label
             {
                 Text = comment.Content,
                 ForeColor = Theme.FgDefault,
                 AutoSize = true,
                 MaximumSize = new Size(ContentWidth - 30, 0),
-                Margin = new Padding(0, 0, 0, 5) // 내용 아래 여백
+                Margin = new Padding(0, 0, 0, 5)
             };
 
-            // ⭐️ 작성자 정보 (댓글 내용 아래)
             var lblAuthorInfo = new Label
             {
                 Text = $"{comment.AuthorName} | {comment.CreatedDate:MM-dd HH:mm}",
                 ForeColor = Theme.FgMuted,
                 AutoSize = true
             };
-            
-            // ⭐️ 액션 패널: 공감 카운터, 공감 버튼, 삭제 버튼을 담습니다.
+
             var pnlActions = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -264,57 +486,57 @@ namespace XBit.Pages
                 Margin = new Padding(0)
             };
 
-            // 공감 카운터
             int likes = comment.Likes;
-            var lblLikes = new Label { Text = $"{likes}개", ForeColor = Theme.FgMuted, AutoSize = true, Margin = new Padding(5, 5, 5, 0) };
+            var lblLikes = new Label 
+            { 
+                Text = $"{likes}개", 
+                ForeColor = Theme.FgMuted, 
+                AutoSize = true, 
+                Margin = new Padding(5, 5, 5, 0) 
+            };
 
-            // 공감 버튼
-            var btnLike = new Button { 
+            var btnLike = new Button 
+            { 
                 Text = $"👍 공감", 
                 Width = 70, 
                 Height = 25, 
                 Tag = comment.Id,
-                Margin = new Padding(0, 0, 8, 0) // ⭐️ 버튼 간 여백 추가
+                Margin = new Padding(0, 0, 8, 0)
             };
             Theme.StyleButton(btnLike);
             btnLike.Click += BtnLikeComment_Click;
 
-            // ⭐️ 삭제 버튼 추가 (작성자에게만)
             if (comment.AuthorId == AuthService.CurrentUser.Id)
             {
-                var btnDel = new Button { 
+                var btnDel = new Button 
+                { 
                     Text = "삭제", 
                     Width = 50, 
                     Height = 25, 
                     Tag = comment.Id,
-                    Margin = new Padding(0, 0, 8, 0) // ⭐️ 버튼 간 여백 추가
-                }; 
+                    Margin = new Padding(0, 0, 8, 0)
+                };
                 Theme.StyleDanger(btnDel);
                 btnDel.Font = new Font("Segoe UI", 9f);
                 btnDel.Click += BtnDeleteComment_Click;
-                
+
                 pnlActions.Controls.Add(btnDel);
-                pnlActions.Controls.SetChildIndex(btnDel, 0); // 가장 오른쪽
+                pnlActions.Controls.SetChildIndex(btnDel, 0);
             }
-            
-            pnlActions.Controls.Add(btnLike); // 버튼 추가
-            pnlActions.Controls.SetChildIndex(btnLike, comment.AuthorId == AuthService.CurrentUser.Id ? 1 : 0); // 삭제 버튼 다음/가장 오른쪽
-            pnlActions.Controls.Add(lblLikes); // 카운터 추가
 
+            pnlActions.Controls.Add(btnLike);
+            pnlActions.Controls.SetChildIndex(btnLike, comment.AuthorId == AuthService.CurrentUser.Id ? 1 : 0);
+            pnlActions.Controls.Add(lblLikes);
 
-            // TableLayoutPanel에 컨트롤 배치
-            layout.Controls.Add(lblContent, 0, 0); // 내용 (좌측 상단)
-            layout.Controls.Add(lblAuthorInfo, 0, 1); // 작성자 정보 (좌측 하단)
-            
-            layout.Controls.Add(pnlActions, 1, 1); // 액션 (우측 하단)
+            layout.Controls.Add(lblContent, 0, 0);
+            layout.Controls.Add(lblAuthorInfo, 0, 1);
+            layout.Controls.Add(pnlActions, 1, 1);
             layout.SetRowSpan(pnlActions, 1);
-            
-            pnlComment.Controls.Add(layout);
 
+            pnlComment.Controls.Add(layout);
 
             return pnlComment;
         }
-
 
         private void BtnAddComment_Click(object sender, EventArgs e)
         {
@@ -372,10 +594,6 @@ namespace XBit.Pages
             }
         }
 
-
-        // 기존 메서드 (수정 및 삭제, 취소)
-        // ------------------------------------
-
         private void BtnSave_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(txtTitle.Text) || string.IsNullOrWhiteSpace(txtContent.Text))
@@ -389,11 +607,20 @@ namespace XBit.Pages
 
             if (currentPost.Id == 0)
             {
+                currentPost.AuthorId = AuthService.CurrentUser.Id;
+                currentPost.CreatedDate = DateTime.Now;
+                
                 _boardService.CreatePost(currentPost);
                 MessageBox.Show("새 게시글이 작성되었습니다.", "완료");
             }
             else
             {
+                if (currentPost.AuthorId != AuthService.CurrentUser.Id)
+                {
+                    MessageBox.Show("본인이 작성한 게시글만 수정할 수 있습니다.", "권한 오류");
+                    return;
+                }
+                
                 _boardService.UpdatePost(currentPost);
                 MessageBox.Show("게시글이 수정되었습니다.", "완료");
             }

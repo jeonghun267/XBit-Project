@@ -25,7 +25,7 @@ namespace XBit
             Theme.Apply(this);
             InternalNavigate(typeof(PageHome), null);
             UpdateBackButtonVisibility(); // 초기 상태 설정
-        }
+        }
 
         private void InitializeFormLayout()
         {
@@ -38,7 +38,7 @@ namespace XBit
             pnlSidebar.BackColor = Theme.BgSidebar;
 
             // 뒤로가기 버튼
-            btnBack = new Button { Text = "⬅️ 뒤로", Dock = DockStyle.Top, Height = 44 };
+            btnBack = new Button { Text = "Back", Dock = DockStyle.Top, Height = 44 };
             btnBack.BackColor = Color.LightGray;
             btnBack.ForeColor = Color.Black;
             btnBack.FlatStyle = FlatStyle.Flat;
@@ -46,16 +46,18 @@ namespace XBit
             btnBack.FlatAppearance.BorderColor = Color.DarkGray;
             btnBack.Click += BtnBack_Click;
 
-            // 메뉴 버튼 생성 및 스타일 적용 (나머지 버튼은 생략)
-            var btnHome = new Button { Text = "🏠 홈", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnAssignments = new Button { Text = "📚 과제 목록", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnBoard = new Button { Text = "📝 게시판", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnSettings = new Button { Text = "⚙️ 설정", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnLogout = new Button { Text = "🔒 로그아웃", Width = 180, Height = 44, Margin = new Padding(10, 20, 10, 5) };
+            // 메뉴 버튼 생성 및 스타일 적용
+            var btnHome = new Button { Text = "Home", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
+            var btnAssignments = new Button { Text = "Assignments", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
+            var btnBoard = new Button { Text = "Board", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
+            var btnProjectBoard = new Button { Text = "Project Board", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
+            var btnSettings = new Button { Text = "Settings", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
+            var btnLogout = new Button { Text = "Logout", Width = 180, Height = 44, Margin = new Padding(10, 20, 10, 5) };
 
             Theme.StyleNavButton(btnHome);
             Theme.StyleNavButton(btnAssignments);
             Theme.StyleNavButton(btnBoard);
+            Theme.StyleNavButton(btnProjectBoard);
             Theme.StyleNavButton(btnSettings);
 
             // 로그아웃 버튼 스타일
@@ -68,6 +70,7 @@ namespace XBit
             pnlSidebar.Controls.Add(btnHome);
             pnlSidebar.Controls.Add(btnAssignments);
             pnlSidebar.Controls.Add(btnBoard);
+            pnlSidebar.Controls.Add(btnProjectBoard);
             pnlSidebar.Controls.Add(btnSettings);
             pnlSidebar.Controls.Add(btnLogout);
 
@@ -77,6 +80,7 @@ namespace XBit
             btnHome.Click += (_, __) => NavigateTo<PageHome>();
             btnAssignments.Click += (_, __) => NavigateTo<PageAssignments>();
             btnBoard.Click += (_, __) => NavigateTo<PageBoard>();
+            btnProjectBoard.Click += (_, __) => NavigateTo<PageProjectBoard>();
             btnSettings.Click += (_, __) => NavigateTo<PageSettings>();
         }
 
@@ -98,20 +102,20 @@ namespace XBit
             }
         }
 
-        // ⭐️ 이 메서드를 수정하여 글씨 색상을 강제로 유지
-        private void UpdateBackButtonVisibility()
+        // ⭐️ 이 메서드를 수정하여 글씨 색상을 강제로 유지
+        private void UpdateBackButtonVisibility()
         {
             bool isEnabled = NavigationStack.Count > 0;
 
             btnBack.Enabled = isEnabled;
             btnBack.Visible = true;
 
-            // ⭐️ 핵심 수정: 버튼의 상태와 관계없이 글씨색을 검정으로 강제 지정하여 흐릿해지는 것을 방지
-            btnBack.ForeColor = Color.Black;
+            // ⭐️ 핵심 수정: 버튼의 상태와 관계없이 글씨색을 검검으로 강제 지정하여 흐릿해지는 것을 방지
+            btnBack.ForeColor = Color.Black;
         }
 
-        // ... (NavigateTo 및 InternalNavigate 메서드 유지) ...
-        public void NavigateTo<T>(object parameter = null) where T : UserControl, new()
+        // ... (NavigateTo 및 InternalNavigate 메서드 유지) ...
+        public void NavigateTo<T>(object parameter = null) where T : UserControl, new()
         {
             if (CurrentPage != null && (CurrentPage.PageType != typeof(T) || CurrentPage.Parameter != parameter))
             {
@@ -122,7 +126,13 @@ namespace XBit
 
         private void InternalNavigate(Type pageType, object parameter, bool isBack = false)
         {
+            // ⭐️ 이전 페이지 완전 정리
+            foreach (Control control in pnlContent.Controls)
+            {
+                control.Dispose();
+            }
             pnlContent.Controls.Clear();
+
             UserControl newPage;
 
             if (pageType == typeof(PageAssignmentDetail) && parameter is int assignmentId && assignmentId != -1)
@@ -141,13 +151,14 @@ namespace XBit
             else if (pageType == typeof(PageSettings) && parameter is string sectionTag)
             {
                 newPage = (UserControl)Activator.CreateInstance(pageType);
-                // ((PageSettings)newPage).ScrollToSection(sectionTag); // PageSettings에 구현 필요
             }
             else
             {
                 newPage = (UserControl)Activator.CreateInstance(pageType);
             }
 
+            // ⭐️ Padding 명시적 초기화 및 Dock
+            newPage.Padding = new Padding(0);
             newPage.Dock = DockStyle.Fill;
             pnlContent.Controls.Add(newPage);
 

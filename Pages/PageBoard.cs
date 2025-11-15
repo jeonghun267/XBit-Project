@@ -25,7 +25,7 @@ namespace XBit.Pages
             {
                 Text = "새 글 작성",
                 Height = 40,
-                Width = 120, // ⭐️ 버튼 너비를 명확하게 지정
+                Width = 120,
                 Margin = new Padding(10)
             };
             btnNewPost.Click += BtnNewPost_Click;
@@ -40,13 +40,16 @@ namespace XBit.Pages
                 AutoGenerateColumns = false,
                 BorderStyle = BorderStyle.None,
 
-                // ⭐️ DataGridView 행 높이를 내용에 맞게 자동 조절 설정
                 AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
                 DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True }
             };
 
-            // DataGridView 컬럼 설정
+            // ⭐️ DataGridView 컬럼 설정 (댓글 수 컬럼 추가)
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "제목", DataPropertyName = "Title", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+
+            // ⭐️ 댓글 수 컬럼 추가
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "댓글", DataPropertyName = "CommentCount", Width = 70, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "작성자", DataPropertyName = "AuthorName", Width = 150 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "작성일", DataPropertyName = "CreatedDate", Width = 150, DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm" } });
 

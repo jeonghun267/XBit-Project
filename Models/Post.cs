@@ -1,4 +1,5 @@
-﻿// XBit/Models/Post.cs (새 파일 생성)
+﻿// Models/Post.cs
+
 using System;
 
 namespace XBit.Models
@@ -9,7 +10,12 @@ namespace XBit.Models
         public string Title { get; set; }
         public string Content { get; set; }
         public int AuthorId { get; set; }
-        public string AuthorName { get; set; } // 조인하여 표시할 이름
+        public string AuthorName { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public int Views { get; set; }
+
+        // ⭐️ 추가: 댓글 수를 저장할 필드
+        public int CommentCount { get; set; }
         public DateTime CreatedDate { get; set; }
     }
 }
