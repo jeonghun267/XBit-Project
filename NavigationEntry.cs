@@ -1,15 +1,30 @@
-﻿// XBit/NavigationEntry.cs (XBit 네임스페이스에 새 파일 생성)
+﻿// NavigationEntry.cs
+
 using System;
 
 namespace XBit
 {
-    // 네비게이션 기록에 저장될 항목
+    /// <summary>
+    /// 페이지 네비게이션 정보를 저장하는 클래스
+    /// </summary>
     public class NavigationEntry
     {
-        public Type PageType { get; set; } // PageHome, PageAssignments 등 페이지의 타입
-        public object Parameter { get; set; } // 필터링 인수 ("DueToday" 등)
+        /// <summary>
+        /// 네비게이션할 페이지의 타입
+        /// </summary>
+        public Type PageType { get; set; }
+        
+        /// <summary>
+        /// 페이지에 전달할 매개변수
+        /// </summary>
+        public object Parameter { get; set; }
 
-        public NavigationEntry(Type pageType, object parameter)
+        /// <summary>
+        /// NavigationEntry 생성자
+        /// </summary>
+        /// <param name="pageType">페이지 타입</param>
+        /// <param name="parameter">전달할 매개변수 (선택)</param>
+        public NavigationEntry(Type pageType, object parameter = null)
         {
             PageType = pageType;
             Parameter = parameter;

@@ -9,7 +9,7 @@ namespace XBit.Services
 {
     public class AssignmentService
     {
-        // ⭐️ 실제 DB에서 사용자의 과제 목록 가져오기
+        // ⭐️ 실제 DB에서 사용자의 프로젝트 목록 가져오기
         public List<Assignment> GetAssignmentsForUser(int userId)
         {
             var assignments = new List<Assignment>();
@@ -48,7 +48,7 @@ namespace XBit.Services
             return assignments;
         }
 
-        // ⭐️ 실제 DB에서 과제 상세 정보 가져오기
+        // ⭐️ 실제 DB에서 프로젝트 상세 정보 가져오기
         public Assignment GetAssignmentById(int assignmentId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -84,7 +84,7 @@ namespace XBit.Services
             return null;
         }
 
-        // ⭐️ 과제 상태 업데이트
+        // ⭐️ 프로젝트 상태 업데이트
         public bool UpdateAssignmentStatus(int assignmentId, string newStatus)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -111,7 +111,7 @@ namespace XBit.Services
             }
         }
 
-        // ⭐️ 새 과제 추가
+        // ⭐️ 새 프로젝트 추가
         public bool AddAssignment(string course, string title, DateTime dueDate, int userId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -142,7 +142,7 @@ namespace XBit.Services
             }
         }
 
-        // ⭐️ 과제 삭제
+        // ⭐️ 프로젝트 삭제
         public bool DeleteAssignment(int assignmentId, int userId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))

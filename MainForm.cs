@@ -5,6 +5,7 @@ using System.Linq;
 using System.Collections.Generic;
 using XBit.Services;
 using XBit.Pages;
+using XBit.Models;
 using System.Reflection;
 
 namespace XBit
@@ -15,19 +16,21 @@ namespace XBit
         private NavigationEntry CurrentPage;
 
         public Panel pnlContent;
-        private FlowLayoutPanel pnlSidebar;
         private Button btnBack;
-
-        private Button btnNotifications;
+        private Button btnNotification;
+        private Label lblNotificationBadge;
+        private Timer notificationTimer;
         private NotificationService _notificationService = new NotificationService();
 
         public MainForm()
         {
             InitializeFormLayout();
-            this.Text = $"XBit - Logged in as {AuthService.CurrentUser.Name}";
+            this.Text = $"XBit - Logged in as {AuthService.CurrentUser?.Name ?? "Guest"}";
             Theme.Apply(this);
             InternalNavigate(typeof(PageHome), null);
             UpdateBackButtonVisibility();
+            InitializeNotificationTimer();
+            UpdateNotificationBadge();
         }
 
         private void InitializeFormLayout()
@@ -37,58 +40,145 @@ namespace XBit
             this.MinimumSize = new Size(800, 600);
 
             pnlContent = new Panel { Name = "pnlContent", Dock = DockStyle.Fill };
-            pnlSidebar = new FlowLayoutPanel { Name = "pnlSidebar", Dock = DockStyle.Left, Width = 200, FlowDirection = FlowDirection.TopDown };
-            pnlSidebar.BackColor = Theme.BgSidebar;
 
-            btnBack = new Button { Text = "Back", Dock = DockStyle.Top, Height = 44 };
-            btnBack.BackColor = Color.LightGray;
-            btnBack.ForeColor = Color.Black;
-            btnBack.FlatStyle = FlatStyle.Flat;
-            btnBack.FlatAppearance.BorderSize = 1;
-            btnBack.FlatAppearance.BorderColor = Color.DarkGray;
-            btnBack.Click += BtnBack_Click;
-
-            var btnHome = new Button { Text = "Home", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnAssignments = new Button { Text = "Assignments", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnBoard = new Button { Text = "Board", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnProjectBoard = new Button { Text = "Project Board", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnSettings = new Button { Text = "Settings", Width = 180, Height = 44, Margin = new Padding(10, 5, 10, 5) };
-            var btnLogout = new Button { Text = "Logout", Width = 180, Height = 44, Margin = new Padding(10, 20, 10, 5) };
-
-            Theme.StyleNavButton(btnHome);
-            Theme.StyleNavButton(btnAssignments);
-            Theme.StyleNavButton(btnBoard);
-            Theme.StyleNavButton(btnProjectBoard);
-            Theme.StyleNavButton(btnSettings);
-
-            btnLogout.BackColor = Color.IndianRed;
-            btnLogout.ForeColor = Color.White;
-            btnLogout.FlatAppearance.MouseOverBackColor = Color.Firebrick;
-            btnLogout.Click += BtnLogout_Click; // ⭐️ 대소문자 수정
-
-            pnlSidebar.Controls.Add(btnBack);
-            pnlSidebar.Controls.Add(btnHome);
-            pnlSidebar.Controls.Add(btnAssignments);
-            pnlSidebar.Controls.Add(btnBoard);
-            pnlSidebar.Controls.Add(btnProjectBoard);
-            pnlSidebar.Controls.Add(btnSettings);
-            pnlSidebar.Controls.Add(btnLogout);
-
+            var pnlTopBar = CreateTopBar();
             this.Controls.Add(pnlContent);
-            this.Controls.Add(pnlSidebar);
+            this.Controls.Add(pnlTopBar);
+        }
 
-            btnHome.Click += (_, __) => NavigateTo<PageHome>();
-            btnAssignments.Click += (_, __) => NavigateTo<PageAssignments>();
-            btnBoard.Click += (_, __) => NavigateTo<PageBoard>();
-            btnProjectBoard.Click += (_, __) => NavigateTo<PageProjectBoard>();
-            btnSettings.Click += (_, __) => NavigateTo<PageSettings>();
+        private Panel CreateTopBar()
+        {
+            var pnlTopBar = new Panel
+            {
+                Name = "pnlTopBar",
+                Dock = DockStyle.Top,
+                Height = 50,
+                BackColor = Theme.BgSidebar
+            };
+
+            var btnMenu = CreateButton("☰", 50, 50, DockStyle.Left, BtnMenu_Click);
+            btnBack = CreateButton("뒤로", 80, 50, DockStyle.Left, BtnBack_Click);
+            btnBack.Enabled = false;
+
+            // 알림 버튼 추가
+            btnNotification = CreateButton("🔔", 50, 50, DockStyle.Right, BtnNotification_Click);
+            btnNotification.Font = new Font("Segoe UI Emoji", 16f);
+
+            // 알림 배지 (읽지 않은 알림 개수)
+            lblNotificationBadge = new Label
+            {
+                AutoSize = false,
+                Width = 20,
+                Height = 20,
+                BackColor = Color.Red,
+                ForeColor = Color.White,
+                Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Visible = false,
+                Text = "0"
+            };
+
+            // 배지를 알림 버튼 위에 배치
+            pnlTopBar.Controls.Add(btnNotification);
+            pnlTopBar.Controls.Add(lblNotificationBadge);
+            
+            pnlTopBar.Resize += (s, e) =>
+            {
+                lblNotificationBadge.Location = new Point(
+                    pnlTopBar.Width - 35,
+                    8
+                );
+            };
+
+            pnlTopBar.Controls.Add(btnMenu);
+            pnlTopBar.Controls.Add(btnBack);
+
+            return pnlTopBar;
+        }
+
+        private Button CreateButton(string text, int width, int height, DockStyle dock, EventHandler clickHandler)
+        {
+            var button = new Button
+            {
+                Text = text,
+                Width = width,
+                Height = height,
+                Dock = dock,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Theme.BgSidebar,
+                ForeColor = Theme.FgPrimary
+            };
+            button.FlatAppearance.BorderSize = 0;
+            button.Click += clickHandler;
+            return button;
+        }
+
+        private void InitializeNotificationTimer()
+        {
+            // 30초마다 알림 개수 업데이트
+            notificationTimer = new Timer
+            {
+                Interval = 30000 // 30초
+            };
+            notificationTimer.Tick += (s, e) => UpdateNotificationBadge();
+            notificationTimer.Start();
+        }
+
+        private void UpdateNotificationBadge()
+        {
+            if (AuthService.CurrentUser == null) return;
+
+            int unreadCount = _notificationService.GetUnreadCount(AuthService.CurrentUser.Id);
+
+            if (unreadCount > 0)
+            {
+                lblNotificationBadge.Text = unreadCount > 99 ? "99+" : unreadCount.ToString();
+                lblNotificationBadge.Visible = true;
+            }
+            else
+            {
+                lblNotificationBadge.Visible = false;
+            }
+        }
+
+        private void BtnNotification_Click(object sender, EventArgs e)
+        {
+            NavigateTo<PageNotifications>();
+            UpdateNotificationBadge(); // 알림 페이지로 이동 후 배지 업데이트
+        }
+
+        private void BtnMenu_Click(object sender, EventArgs e)
+        {
+            var menuItems = new Dictionary<string, Action>
+            {
+                { "홈", () => NavigateTo<PageHome>() },
+                { "프로젝트", () => NavigateTo<PageAssignments>() },
+                { "게시판", () => NavigateTo<PageBoard>() },
+                { "협업", () => NavigateTo<PageProjectBoard>() },
+                { "알림", () => NavigateTo<PageNotifications>() },
+                { "설정", () => NavigateTo<PageSettings>() },
+                { "로그아웃", () => BtnLogout_Click(sender, e) }
+            };
+
+            var menu = new ContextMenuStrip();
+            foreach (var item in menuItems)
+            {
+                menu.Items.Add(item.Key, null, (_, __) => item.Value());
+            }
+
+            menu.Show(Cursor.Position);
         }
 
         private void BtnBack_Click(object sender, EventArgs e) => GoBack();
 
-        // ⭐️ 메서드명 통일: BtnLogout_Click (대문자 B)
         private void BtnLogout_Click(object sender, EventArgs e)
         {
+            if (notificationTimer != null)
+            {
+                notificationTimer.Stop();
+                notificationTimer.Dispose();
+            }
+
             AuthService.Logout();
             Application.Restart();
         }
@@ -110,105 +200,7 @@ namespace XBit
             btnBack.Enabled = isEnabled;
             btnBack.Visible = true;
 
-            btnBack.ForeColor = Color.Black;
-        }
-
-        private Panel CreateHeader()
-        {
-            var header = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 60,
-                BackColor = Theme.Primary
-            };
-
-            var lblTitle = new Label
-            {
-                Text = "XBIT",
-                Font = new Font("Segoe UI", 18f, FontStyle.Bold),
-                ForeColor = Color.White,
-                Location = new Point(20, 15),
-                AutoSize = true
-            };
-
-            var lblUser = new Label
-            {
-                Text = $"{AuthService.CurrentUser.Name} 님",
-                Font = new Font("Segoe UI", 10f),
-                ForeColor = Color.White,
-                AutoSize = true,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
-            };
-
-            btnNotifications = new Button
-            {
-                Text = "알림",
-                Width = 80,
-                Height = 35,
-                ForeColor = Color.White,
-                BackColor = Theme.Primary,
-                FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
-            };
-            btnNotifications.FlatAppearance.BorderColor = Color.White;
-            btnNotifications.Click += BtnNotifications_Click;
-
-            var btnLogout = new Button
-            {
-                Text = "로그아웃",
-                Width = 80,
-                Height = 35,
-                ForeColor = Color.White,
-                BackColor = Theme.Danger,
-                FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
-            };
-            btnLogout.FlatAppearance.BorderSize = 0;
-            btnLogout.Click += BtnLogout_Click; // ⭐️ 대소문자 일치
-                
-            header.Resize += (s, e) =>
-            {
-                lblUser.Location = new Point(header.Width - 260, 20);
-                btnNotifications.Location = new Point(header.Width - 180, 12);
-                btnLogout.Location = new Point(header.Width - 95, 12);
-            };
-
-            header.Controls.Add(lblTitle);
-            header.Controls.Add(lblUser);
-            header.Controls.Add(btnNotifications);
-            header.Controls.Add(btnLogout);
-
-            var notificationTimer = new System.Windows.Forms.Timer();
-            notificationTimer.Interval = 10000;
-            notificationTimer.Tick += (s, e) => UpdateNotificationBadge();
-            notificationTimer.Start();
-
-            UpdateNotificationBadge();
-
-            return header;
-        }
-
-        private void UpdateNotificationBadge()
-        {
-            if (AuthService.CurrentUser == null) return;
-
-            int unreadCount = _notificationService.GetUnreadCount(AuthService.CurrentUser.Id);
-
-            if (unreadCount > 0)
-            {
-                btnNotifications.Text = $"알림 ({unreadCount})";
-                btnNotifications.BackColor = Color.FromArgb(244, 67, 54);
-            }
-            else
-            {
-                btnNotifications.Text = "알림";
-                btnNotifications.BackColor = Theme.Primary;
-            }
-        }
-
-        private void BtnNotifications_Click(object sender, EventArgs e)
-        {
-            NavigateTo<PageNotifications>();
+            btnBack.ForeColor = isEnabled ? Theme.FgPrimary : Theme.FgMuted;
         }
 
         public void NavigateTo<T>(object parameter = null) where T : UserControl, new()
@@ -228,29 +220,7 @@ namespace XBit
             }
             pnlContent.Controls.Clear();
 
-            UserControl newPage;
-
-            if (pageType == typeof(PageAssignmentDetail) && parameter is int assignmentId && assignmentId != -1)
-            {
-                newPage = (UserControl)Activator.CreateInstance(pageType, assignmentId);
-            }
-            else if (pageType == typeof(PagePostDetail) && parameter is int postId && postId != -1)
-            {
-                newPage = (UserControl)Activator.CreateInstance(pageType, postId);
-            }
-            else if (pageType == typeof(PageAssignments) && parameter is string filter)
-            {
-                newPage = (UserControl)Activator.CreateInstance(pageType);
-                ((PageAssignments)newPage).FilterData(filter);
-            }
-            else if (pageType == typeof(PageSettings) && parameter is string sectionTag)
-            {
-                newPage = (UserControl)Activator.CreateInstance(pageType);
-            }
-            else
-            {
-                newPage = (UserControl)Activator.CreateInstance(pageType);
-            }
+            UserControl newPage = CreatePageInstance(pageType, parameter);
 
             newPage.Padding = new Padding(0);
             newPage.Dock = DockStyle.Fill;
@@ -259,6 +229,42 @@ namespace XBit
             CurrentPage = new NavigationEntry(pageType, parameter);
 
             UpdateBackButtonVisibility();
+        }
+
+        private UserControl CreatePageInstance(Type pageType, object parameter)
+        {
+            if (pageType == typeof(PageAssignmentDetail) && parameter is int assignmentId && assignmentId != -1)
+            {
+                return (UserControl)Activator.CreateInstance(pageType, assignmentId);
+            }
+            else if (pageType == typeof(PagePostDetail) && parameter is int postId && postId != -1)
+            {
+                return (UserControl)Activator.CreateInstance(pageType, postId);
+            }
+            else if (pageType == typeof(PageAssignments) && parameter is string filter)
+            {
+                var page = (PageAssignments)Activator.CreateInstance(pageType);
+                page.FilterData(filter);
+                return page;
+            }
+            else if (pageType == typeof(PageSettings) && parameter is string sectionTag)
+            {
+                return (UserControl)Activator.CreateInstance(pageType);
+            }
+            else
+            {
+                return (UserControl)Activator.CreateInstance(pageType);
+            }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (notificationTimer != null)
+            {
+                notificationTimer.Stop();
+                notificationTimer.Dispose();
+            }
+            base.OnFormClosing(e);
         }
     }
 }

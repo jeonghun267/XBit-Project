@@ -12,7 +12,6 @@ namespace XBit.Models
         public DateTime DueDate { get; set; }
         public string Status { get; set; }
         public int UserId { get; set; }
-        // ⭐️ 오류 해결: Content 속성 추가
         public string Content { get; set; }
     }
 }

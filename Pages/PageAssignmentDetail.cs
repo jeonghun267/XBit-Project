@@ -330,20 +330,20 @@ namespace XBit.Pages
         {
             if (string.IsNullOrEmpty(txtFilePath.Text))
             {
-                System.Windows.Forms.MessageBox.Show("제출할 파일을 먼저 선택해주세요.", "경고", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                System.Windows.Forms.MessageBox.Show("제출할 파일을 먼저 선택해주세요.", "경고", 
+                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                 return;
             }
 
             if (currentAssignment == null)
             {
-                System.Windows.Forms.MessageBox.Show("과제 정보가 로드되지 않았습니다.", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                System.Windows.Forms.MessageBox.Show("과제 정보가 로드되지 않았습니다.", "오류", 
+                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
                 return;
             }
 
-            string prTitle = $"Project #{currentAssignment.Id}: {currentAssignment.Title}";
             string localFilePath = txtFilePath.Text;
 
-            // ✅ 제출 중 UI 상태 변경
             btnSubmit.Enabled = false;
             btnFileSelect.Enabled = false;
             prgSubmitting.Visible = true;
@@ -351,56 +351,39 @@ namespace XBit.Pages
             try
             {
                 _fileService.SubmitFile(localFilePath, currentAssignment.Id);
-                string branchUsed = await _gitHubService.CommitAndPush(currentAssignment.Id, localFilePath);
+                
+                // ⭐️ GitHub Classroom에 제출
+                string commitSha = await _gitHubService.CommitAndPushToClassroom(currentAssignment.Id, localFilePath);
+                string submissionUrl = await _gitHubService.GetSubmissionUrl(currentAssignment.Id);
 
-                string statusUpdateMessage;
-                bool isFirstSubmission = !currentAssignment.Status.Contains("PR 제출됨");
+                // ⭐️ DB에 제출 완료 상태 + URL 저장
+                _assignmentService.UpdateAssignmentStatus(currentAssignment.Id, "제출 완료");
 
-                if (isFirstSubmission)
-                {
-                    int prNumber = await _gitHubService.CreatePullRequest(prTitle, branchUsed);
-                    statusUpdateMessage = $"PR 제출됨 (#{prNumber})";
-
-                    System.Windows.Forms.MessageBox.Show($"GitHub에 PR이 성공적으로 생성되었습니다! PR 번호: #{prNumber}", "제출 완료", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                }
-                else
-                {
-                    statusUpdateMessage = currentAssignment.Status;
-                    System.Windows.Forms.MessageBox.Show($"제출 내용이 기존 PR에 성공적으로 업데이트되었습니다.", "업데이트 완료", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                }
-
-                _assignmentService.UpdateAssignmentStatus(currentAssignment.Id, statusUpdateMessage);
+                System.Windows.Forms.MessageBox.Show(
+                    $"제출 완료!\n\n" +
+                    $"Commit SHA: {commitSha.Substring(0, 7)}\n" +
+                    $"저장소 URL: {submissionUrl}",
+                    "제출 완료", 
+                    System.Windows.Forms.MessageBoxButtons.OK, 
+                    System.Windows.Forms.MessageBoxIcon.Information
+                );
 
                 var mainForm = FindForm() as MainForm;
                 mainForm?.GoBack();
             }
-            catch (FileNotFoundException ex)
-            {
-                System.Windows.Forms.MessageBox.Show($"파일을 찾을 수 없습니다: {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                System.Windows.Forms.MessageBox.Show($"파일 접근 권한 오류: {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
-            catch (DirectoryNotFoundException ex)
-            {
-                System.Windows.Forms.MessageBox.Show($"Git 저장소 경로 오류: {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
             catch (InvalidOperationException ex)
             {
-                System.Windows.Forms.MessageBox.Show($"설정 오류: {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
-            catch (Octokit.ApiException ex)
-            {
-                System.Windows.Forms.MessageBox.Show($"GitHub API 오류 (PR 생성 실패): {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "오류", 
+                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show($"예상치 못한 오류가 발생했습니다: {ex.Message}", "오류", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                System.Windows.Forms.MessageBox.Show(
+                    $"제출 중 오류가 발생했습니다:\n{ex.Message}", "오류", 
+                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
             finally
             {
-                // ✅ 제출 완료 후 UI 복원
                 btnSubmit.Enabled = true;
                 btnFileSelect.Enabled = true;
                 prgSubmitting.Visible = false;

@@ -1,4 +1,4 @@
-﻿// XBit/Theme.cs (Primary 속성 추가)
+﻿// XBit/Theme.cs (AccentColor 추가)
 
 using System;
 using System.Drawing;
@@ -30,6 +30,7 @@ namespace XBit
         // ⭐️ Primary 색상 추가
         public static Color Primary => Color.FromArgb(66, 133, 244); // Blue
         public static Color Accent => Color.FromArgb(66, 133, 244);
+        public static Color AccentColor => Color.FromArgb(66, 133, 244); // PageHome에서 사용
         public static Color Danger => Color.FromArgb(244, 67, 54); // Red
 
         public static void Set(AppTheme t)
@@ -99,7 +100,7 @@ namespace XBit
         {
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = 0;
-            b.BackColor = Primary; // ⭐️ Accent 대신 Primary 사용
+            b.BackColor = Primary;
             b.ForeColor = Color.White;
             b.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
             b.Height = 36;

@@ -1,11 +1,11 @@
-﻿// XBit/Services/GitHubService.cs (네임스페이스 충돌 해결)
+﻿// GitHubService.cs (간단하고 즉시 작동하는 버전)
 
 using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Octokit;
-using LibGit2Sharp; // ⚠️ using 문 순서 중요
+using LibGit2Sharp;
 using XBit.Services;
 using XBit.Models;
 
@@ -16,6 +16,7 @@ namespace XBit.Services
         private readonly string _token;
         private readonly string _username;
         
+        // ⭐️ 공용 저장소 (현재 프로젝트)
         private readonly string _repoOwner = "jeonghun267";
         private readonly string _repoName = "XBit-Project";
         private readonly string _localRepoPath = @"C:\Users\1\source\repos\X BIT\X BIT";
@@ -30,40 +31,95 @@ namespace XBit.Services
             System.Diagnostics.Debug.WriteLine($"[GitHubService] Token: {(_token != null ? "설정됨" : "없음")}");
             System.Diagnostics.Debug.WriteLine($"[GitHubService] Username: {_username ?? "없음"}");
             System.Diagnostics.Debug.WriteLine($"[GitHubService] LocalRepoPath: {_localRepoPath}");
-            System.Diagnostics.Debug.WriteLine($"[GitHubService] Repo Exists: {Directory.Exists(_localRepoPath)}");
         }
 
-        public async Task<string> CommitAndPush(int projectId, string localFilePath)
+        // ⭐️ 학생별 폴더에 제출
+        public async Task<string> CommitAndPushToClassroom(int projectId, string localFilePath)
         {
             if (string.IsNullOrEmpty(_token)) 
                 throw new InvalidOperationException("GitHub 토큰이 설정되지 않았습니다.");
                 
-            if (!System.IO.Directory.Exists(_localRepoPath))
-                throw new DirectoryNotFoundException($"로컬 Git 저장소 경로를 찾을 수 없습니다: {_localRepoPath}"); 
+            if (!Directory.Exists(_localRepoPath))
+                throw new DirectoryNotFoundException($"로컬 Git 저장소 경로를 찾을 수 없습니다: {_localRepoPath}");
 
-            string assignmentFileName = Path.GetFileName(localFilePath);
-            string targetPath = Path.Combine(_localRepoPath, assignmentFileName);
-            string branchName = $"project-{projectId}-submission-{_username}";
-            string commitMessage = $"Project #{projectId} submitted by {_username}";
-            
-            System.IO.File.Copy(localFilePath, targetPath, true);
+            // ⭐️ 학생별 제출 폴더: Submissions/{username}/assignment-{id}/
+            string submissionFolder = Path.Combine(
+                _localRepoPath, 
+                "Submissions", 
+                _username, 
+                $"assignment-{projectId}"
+            );
 
+            // 폴더 생성
+            if (!Directory.Exists(submissionFolder))
+            {
+                Directory.CreateDirectory(submissionFolder);
+                System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] 폴더 생성: {submissionFolder}");
+            }
+
+            // 파일 복사
+            string fileName = Path.GetFileName(localFilePath);
+            string targetPath = Path.Combine(submissionFolder, fileName);
+            File.Copy(localFilePath, targetPath, true);
+
+            System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] 파일 복사됨: {targetPath}");
+
+            // ⭐️ 제출 정보 파일 생성 (README.md)
+            string readmePath = Path.Combine(submissionFolder, "README.md");
+            string readmeContent = $@"# Project {projectId} - {_username}
+
+**제출자:** {_username}  
+**제출 시각:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}  
+**파일:** {fileName}  
+
+---
+*XBit 앱을 통해 자동 제출되었습니다.*
+";
+            File.WriteAllText(readmePath, readmeContent);
+
+            // Git 작업
             return await Task.Run(() => 
             {
-                // ⭐️ LibGit2Sharp.Repository로 명시
                 using (var repo = new LibGit2Sharp.Repository(_localRepoPath)) 
                 {
+                    // ⭐️ 브랜치 생성 (학생별)
+                    string branchName = $"submission-{_username}-project-{projectId}";
+                    
+                    // main 브랜치로 체크아웃
+                    Commands.Checkout(repo, "main");
+                    
+                    // 브랜치가 없으면 생성
                     if (repo.Branches[branchName] == null)
                     {
-                        repo.CreateBranch(branchName); 
+                        repo.CreateBranch(branchName);
+                        System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] 브랜치 생성: {branchName}");
                     }
+                    
                     Commands.Checkout(repo, branchName);
 
-                    Commands.Stage(repo, assignmentFileName);
+                    // ⭐️ Submissions/{username}/assignment-{id}/ 전체 추가
+                    string gitPath = $"Submissions/{_username}/assignment-{projectId}/*";
+                    Commands.Stage(repo, gitPath);
 
-                    var signature = new LibGit2Sharp.Signature(_username, $"{_username}@example.com", DateTimeOffset.Now);
-                    repo.Commit(commitMessage, signature, signature);
+                    System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] Staged: {gitPath}");
 
+                    // Commit
+                    var signature = new LibGit2Sharp.Signature(
+                        _username, 
+                        $"{_username}@student.edu", 
+                        DateTimeOffset.Now
+                    );
+                    
+                    string commitMessage = $@"Project #{projectId} submitted by {_username}
+
+제출 시각: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+파일: {fileName}
+";
+                    
+                    var commit = repo.Commit(commitMessage, signature, signature);
+                    System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] Commit: {commit.Sha}");
+
+                    // Push
                     var options = new PushOptions
                     {
                         CredentialsProvider = (url, user, cred) => new LibGit2Sharp.UsernamePasswordCredentials
@@ -75,12 +131,23 @@ namespace XBit.Services
                     
                     var remote = repo.Network.Remotes["origin"];
                     repo.Network.Push(remote, repo.Head.CanonicalName, options);
+                    
+                    System.Diagnostics.Debug.WriteLine($"[CommitAndPushToClassroom] Push 완료: {branchName}");
 
-                    return branchName;
+                    return commit.Sha;
                 }
             });
         }
 
+        // ⭐️ 제출 URL 생성
+        public async Task<string> GetSubmissionUrl(int projectId)
+        {
+            string branchName = $"submission-{_username}-project-{projectId}";
+            string url = $"https://github.com/{_repoOwner}/{_repoName}/tree/{branchName}/Submissions/{_username}/assignment-{projectId}";
+            return await Task.FromResult(url);
+        }
+
+        // 기존 메서드들 유지
         public async Task<bool> SyncAllChanges()
         {
             System.Diagnostics.Debug.WriteLine("[SyncAllChanges] 시작");
@@ -101,74 +168,36 @@ namespace XBit.Services
             {
                 try
                 {
-                    System.Diagnostics.Debug.WriteLine("[SyncAllChanges] Repository 열기 시도...");
-                    
-                    // ⭐️ LibGit2Sharp.Repository로 명시
                     using (var repo = new LibGit2Sharp.Repository(_localRepoPath))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] 현재 브랜치: {repo.Head.FriendlyName}");
-                        
                         var status = repo.RetrieveStatus();
                         
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Modified: {status.Modified.Count()}");
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Added: {status.Added.Count()}");
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Removed: {status.Removed.Count()}");
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Untracked: {status.Untracked.Count()}");
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] IsDirty: {status.IsDirty}");
-
                         if (!status.IsDirty)
                         {
                             System.Diagnostics.Debug.WriteLine("[SyncAllChanges] 변경사항 없음");
                             return false;
                         }
 
-                        foreach (var item in status.Modified)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"  - Modified: {item.FilePath}");
-                        }
-                        foreach (var item in status.Added)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"  - Added: {item.FilePath}");
-                        }
-                        foreach (var item in status.Untracked)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"  - Untracked: {item.FilePath}");
-                        }
-
-                        System.Diagnostics.Debug.WriteLine("[SyncAllChanges] Staging 시작...");
                         Commands.Stage(repo, "*");
 
-                        System.Diagnostics.Debug.WriteLine("[SyncAllChanges] Commit 시작...");
-                        // ⭐️ LibGit2Sharp.Signature로 명시
                         var signature = new LibGit2Sharp.Signature(_username, $"{_username}@example.com", DateTimeOffset.Now);
                         var commit = repo.Commit(
                             $"Auto sync from XBit App - {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
                             signature,
                             signature
                         );
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Commit 완료: {commit.Sha}");
 
-                        System.Diagnostics.Debug.WriteLine("[SyncAllChanges] Push 시작...");
                         var options = new PushOptions
                         {
-                            CredentialsProvider = (url, user, cred) =>
+                            CredentialsProvider = (url, user, cred) => new UsernamePasswordCredentials
                             {
-                                System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] 인증 요청 - URL: {url}, User: {user}");
-                                return new UsernamePasswordCredentials
-                                {
-                                    Username = _username,
-                                    Password = _token
-                                };
+                                Username = _username,
+                                Password = _token
                             }
                         };
 
                         var remote = repo.Network.Remotes["origin"];
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Remote: {remote.Name} - {remote.Url}");
-                        
-                        var currentBranch = repo.Head;
-                        System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] Pushing branch: {currentBranch.CanonicalName}");
-                        
-                        repo.Network.Push(remote, currentBranch.CanonicalName, options);
+                        repo.Network.Push(remote, repo.Head.CanonicalName, options);
                         
                         System.Diagnostics.Debug.WriteLine("[SyncAllChanges] Push 완료!");
                         return true;
@@ -176,16 +205,7 @@ namespace XBit.Services
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] 예외 발생!");
-                    System.Diagnostics.Debug.WriteLine($"  Type: {ex.GetType().Name}");
-                    System.Diagnostics.Debug.WriteLine($"  Message: {ex.Message}");
-                    System.Diagnostics.Debug.WriteLine($"  StackTrace: {ex.StackTrace}");
-                    
-                    if (ex.InnerException != null)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  InnerException: {ex.InnerException.Message}");
-                    }
-                    
+                    System.Diagnostics.Debug.WriteLine($"[SyncAllChanges] 예외: {ex.Message}");
                     return false;
                 }
             });
@@ -196,42 +216,18 @@ namespace XBit.Services
             try
             {
                 if (!Directory.Exists(_localRepoPath))
-                {
-                    System.Diagnostics.Debug.WriteLine("[GetChangedFilesCount] 저장소 경로 없음");
                     return 0;
-                }
 
-                // ⭐️ LibGit2Sharp.Repository로 명시
                 using (var repo = new LibGit2Sharp.Repository(_localRepoPath))
                 {
                     var status = repo.RetrieveStatus();
-                    int count = status.Modified.Count() + status.Added.Count() + status.Removed.Count() + status.Untracked.Count();
-                    
-                    System.Diagnostics.Debug.WriteLine($"[GetChangedFilesCount] 변경된 파일: {count}개");
-                    return count;
+                    return status.Modified.Count() + status.Added.Count() + status.Removed.Count() + status.Untracked.Count();
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"[GetChangedFilesCount] 오류: {ex.Message}");
                 return 0;
             }
-        }
-
-        public async Task<int> CreatePullRequest(string title, string headBranch)
-        {
-            var client = new GitHubClient(new ProductHeaderValue("XBit-App"))
-            {
-                Credentials = new Octokit.Credentials(_token) 
-            };
-
-            var newPr = new NewPullRequest(title, headBranch, "main") 
-            {
-                Body = $"XBit 앱을 통해 제출된 프로젝트: {title}"
-            };
-
-            var pr = await client.PullRequest.Create(_repoOwner, _repoName, newPr); 
-            return pr.Number; 
         }
     }
 }

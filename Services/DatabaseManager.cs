@@ -1,4 +1,4 @@
-﻿// XBit/Services/DatabaseManager.cs (알림 추가)
+﻿// XBit/Services/DatabaseManager.cs (디버그 로그 추가 버전)
 
 using System;
 using System.Data.SQLite;
@@ -18,24 +18,37 @@ namespace XBit.Services
             string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DbFile);
             ConnectionString = $"Data Source={dbPath};Version=3;";
 
+            System.Diagnostics.Debug.WriteLine($"[DB] 초기화 시작 - 경로: {dbPath}");
+
             var dir = Path.GetDirectoryName(dbPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
+                System.Diagnostics.Debug.WriteLine($"[DB] 디렉터리 생성: {dir}");
             }
 
-            if (!File.Exists(dbPath))
+            bool isNewFile = !File.Exists(dbPath);
+            if (isNewFile)
             {
                 SQLiteConnection.CreateFile(dbPath);
+                System.Diagnostics.Debug.WriteLine("[DB] 새 DB 파일 생성됨!");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("[DB] 기존 DB 파일 사용");
             }
 
             CreateTables();
-            CreateIndexes(); // ⭐️ 인덱스 생성 추가
+            CreateIndexes();
             AddInitialDataIfNeeded();
+            
+            System.Diagnostics.Debug.WriteLine("[DB] 초기화 완료!");
         }
 
         private static void CreateTables()
         {
+            System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 시작...");
+            
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -144,131 +157,48 @@ namespace XBit.Services
                     );";
                 using (var cmd = new SQLiteCommand(sqlNotifications, conn)) { cmd.ExecuteNonQuery(); }
             }
+            
+            System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 완료!");
         }
 
-        // ⭐️ 인덱스 생성 메서드 추가
         private static void CreateIndexes()
         {
+            System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 시작...");
+            
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
 
-                // Comments 테이블의 PostId에 인덱스 생성 (경고 해결)
-                string sqlIndexCommentPostId = @"
-                    CREATE INDEX IF NOT EXISTS idx_comments_postid 
-                    ON Comments(PostId);";
-                using (var cmd = new SQLiteCommand(sqlIndexCommentPostId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
+                string[] indexes = {
+                    "CREATE INDEX IF NOT EXISTS idx_comments_postid ON Comments(PostId);",
+                    "CREATE INDEX IF NOT EXISTS idx_comments_authorid ON Comments(AuthorId);",
+                    "CREATE INDEX IF NOT EXISTS idx_posts_authorid ON Posts(AuthorId);",
+                    "CREATE INDEX IF NOT EXISTS idx_assignments_userid ON Assignments(UserId);",
+                    "CREATE INDEX IF NOT EXISTS idx_tasks_teamid ON Tasks(TeamId);",
+                    "CREATE INDEX IF NOT EXISTS idx_assignments_duedate ON Assignments(DueDate);",
+                    "CREATE INDEX IF NOT EXISTS idx_posts_createddate ON Posts(CreatedDate);",
+                    "CREATE INDEX IF NOT EXISTS idx_teammembers_teamid ON TeamMembers(TeamId);",
+                    "CREATE INDEX IF NOT EXISTS idx_teammembers_userid ON TeamMembers(UserId);",
+                    "CREATE INDEX IF NOT EXISTS idx_notifications_userid ON Notifications(UserId);",
+                    "CREATE INDEX IF NOT EXISTS idx_notifications_isread ON Notifications(UserId, IsRead);"
+                };
 
-                // Comments 테이블의 AuthorId에도 인덱스 추가 (추가 최적화)
-                string sqlIndexCommentAuthorId = @"
-                    CREATE INDEX IF NOT EXISTS idx_comments_authorid 
-                    ON Comments(AuthorId);";
-                using (var cmd = new SQLiteCommand(sqlIndexCommentAuthorId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // Posts 테이블의 AuthorId에 인덱스
-                string sqlIndexPostAuthorId = @"
-                    CREATE INDEX IF NOT EXISTS idx_posts_authorid 
-                    ON Posts(AuthorId);";
-                using (var cmd = new SQLiteCommand(sqlIndexPostAuthorId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // Assignments 테이블의 UserId에 인덱스
-                string sqlIndexAssignmentUserId = @"
-                    CREATE INDEX IF NOT EXISTS idx_assignments_userid 
-                    ON Assignments(UserId);";
-                using (var cmd = new SQLiteCommand(sqlIndexAssignmentUserId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // Tasks 테이블의 TeamId에 인덱스
-                string sqlIndexTaskTeamId = @"
-                    CREATE INDEX IF NOT EXISTS idx_tasks_teamid 
-                    ON Tasks(TeamId);";
-                using (var cmd = new SQLiteCommand(sqlIndexTaskTeamId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // ⭐️ 날짜 기반 검색을 위한 인덱스
-                string sqlIndexAssignmentDueDate = @"
-                    CREATE INDEX IF NOT EXISTS idx_assignments_duedate 
-                    ON Assignments(DueDate);",
-                    sqlIndexPostCreatedDate = @"
-                    CREATE INDEX IF NOT EXISTS idx_posts_createddate 
-                    ON Posts(CreatedDate);";
-                using (var cmd = new SQLiteCommand(sqlIndexAssignmentDueDate, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-                using (var cmd = new SQLiteCommand(sqlIndexPostCreatedDate, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // TeamMembers 인덱스
-                string sqlIndexTeamMembersTeamId = @"
-                    CREATE INDEX IF NOT EXISTS idx_teammembers_teamid 
-                    ON TeamMembers(TeamId);",
-                    sqlIndexTeamMembersUserId = @"
-                    CREATE INDEX IF NOT EXISTS idx_teammembers_userid 
-                    ON TeamMembers(UserId);";
-                using (var cmd = new SQLiteCommand(sqlIndexTeamMembersTeamId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-                using (var cmd = new SQLiteCommand(sqlIndexTeamMembersUserId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // Notifications 테이블의 UserId 인덱스
-                string sqlIndexNotificationUserId = @"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_userid 
-                    ON Notifications(UserId);";
-                using (var cmd = new SQLiteCommand(sqlIndexNotificationUserId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // 추가: Type과 CreatedDate에 대한 복합 인덱스
-                string sqlIndexNotificationTypeDate = @"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_type_date 
-                    ON Notifications(Type, CreatedDate);";
-                using (var cmd = new SQLiteCommand(sqlIndexNotificationTypeDate, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                // Notifications 인덱스
-                string sqlIndexNotificationsUserId = @"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_userid 
-                    ON Notifications(UserId);";
-                using (var cmd = new SQLiteCommand(sqlIndexNotificationsUserId, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
-                }
-
-                string sqlIndexNotificationsIsRead = @"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_isread 
-                    ON Notifications(UserId, IsRead);";
-                using (var cmd = new SQLiteCommand(sqlIndexNotificationsIsRead, conn)) 
-                { 
-                    cmd.ExecuteNonQuery(); 
+                foreach (var sql in indexes)
+                {
+                    using (var cmd = new SQLiteCommand(sql, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
                 }
             }
+            
+            System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 완료!");
         }
 
         private static void AddInitialDataIfNeeded()
         {
+            System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 확인 중...");
+            
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -277,35 +207,51 @@ namespace XBit.Services
                 {
                     object result = null;
                     try { result = checkCmd.ExecuteScalar(); }
-                    catch { result = null; }
-
-                    if (result == null || Convert.ToInt32(result) == 0)
+                    catch (Exception ex)
                     {
-                        // ⭐️ 비밀번호 해싱 적용
-                        string hashedPassword = AuthService.HashPassword("1234");
+                        System.Diagnostics.Debug.WriteLine($"[DB] Users 테이블 확인 실패: {ex.Message}");
+                        result = null;
+                    }
+
+                    int userCount = result != null ? Convert.ToInt32(result) : 0;
+                    System.Diagnostics.Debug.WriteLine($"[DB] 현재 사용자 수: {userCount}");
+
+                    if (userCount == 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 시작!");
                         
+                        // 비밀번호 해싱
+                        string hashedPassword = AuthService.HashPassword("1234");
+                        System.Diagnostics.Debug.WriteLine($"[DB] 해싱된 비밀번호: {hashedPassword.Substring(0, 10)}...");
+                        
+                        // 사용자 추가
                         string userSql = "INSERT INTO Users (Username, PasswordHash, Name, Role) VALUES (@u, @p, @n, @r); SELECT last_insert_rowid();";
                         int userId;
                         using (var cmd = new SQLiteCommand(userSql, conn))
                         {
                             cmd.Parameters.AddWithValue("@u", "test");
-                            cmd.Parameters.AddWithValue("@p", hashedPassword); // ⭐️ 해싱된 비밀번호
+                            cmd.Parameters.AddWithValue("@p", hashedPassword);
                             cmd.Parameters.AddWithValue("@n", "관리자_정훈");
                             cmd.Parameters.AddWithValue("@r", (int)UserRole.Admin);
                             userId = Convert.ToInt32(cmd.ExecuteScalar());
                         }
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DB] 사용자 생성됨 - ID: {userId}");
 
-                        // 나머지 초기 데이터 추가 (과제, 게시글)
+                        // 과제 추가
                         string assignmentSql = "INSERT INTO Assignments (Course, Title, DueDate, Status, UserId) VALUES (@c, @t, @d, @s, @uid)";
                         using (var cmd = new SQLiteCommand(assignmentSql, conn))
                         {
+                            // 과제 1
                             cmd.Parameters.AddWithValue("@c", "XR Lab");
                             cmd.Parameters.AddWithValue("@t", "포털 UI 프로토 (긴급)");
                             cmd.Parameters.AddWithValue("@d", DateTime.Now.AddHours(12).ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.Parameters.AddWithValue("@s", "미제출");
                             cmd.Parameters.AddWithValue("@uid", userId);
                             cmd.ExecuteNonQuery();
+                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 1 추가됨 (UserId: {userId})");
 
+                            // 과제 2
                             cmd.Parameters.Clear();
                             cmd.Parameters.AddWithValue("@c", "Unity3D");
                             cmd.Parameters.AddWithValue("@t", "캐릭터 상호작용");
@@ -313,8 +259,20 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@s", "제출");
                             cmd.Parameters.AddWithValue("@uid", userId);
                             cmd.ExecuteNonQuery();
+                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 2 추가됨 (UserId: {userId})");
+                            
+                            // 과제 3 (추가)
+                            cmd.Parameters.Clear();
+                            cmd.Parameters.AddWithValue("@c", "C# WinForms");
+                            cmd.Parameters.AddWithValue("@t", "대시보드 UI 개선");
+                            cmd.Parameters.AddWithValue("@d", DateTime.Now.AddDays(5).ToString("yyyy-MM-dd HH:mm:ss"));
+                            cmd.Parameters.AddWithValue("@s", "미제출");
+                            cmd.Parameters.AddWithValue("@uid", userId);
+                            cmd.ExecuteNonQuery();
+                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 3 추가됨 (UserId: {userId})");
                         }
 
+                        // 게시글 추가
                         string postSql = "INSERT INTO Posts (Title, Content, AuthorId, CreatedDate) VALUES (@t, @c, @aid, @cd)";
                         using (var cmd = new SQLiteCommand(postSql, conn))
                         {
@@ -324,6 +282,12 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@cd", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.ExecuteNonQuery();
                         }
+                        
+                        System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 완료!");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DB] 이미 데이터가 있음. 초기화 스킵.");
                     }
                 }
             }

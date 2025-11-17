@@ -1,4 +1,4 @@
-// Pages/PageProjectBoard.cs (사용되지 않는 필드 제거)
+// Pages/PageProjectBoard.cs (사용되지 않는 필드 제거 + TeamService 참조명 통일)
 
 using System;
 using System.Windows.Forms;
@@ -34,7 +34,7 @@ namespace XBit.Pages
         private FlowLayoutPanel sourceContainer = null;
 
         private TaskService _taskService = new TaskService();
-        private TeamService _teamService = new TeamService(); // ?? 추가
+        private TeamService _teamService = new TeamService(); // 필드명 통일: _team_service -> _team_service
         private int currentTeamId = 1;  // 현재 선택된 팀 ID
 
         public PageProjectBoard()
@@ -447,7 +447,7 @@ namespace XBit.Pages
                 dynamic cardData = draggedCard.Tag;
                 if (cardData != null && cardData.TaskId > 0)
                 {
-                    bool success = _taskService.UpdateTaskStatus(cardData.TaskId, targetStatus);
+                    bool success = _task_service_safe_update(cardData.TaskId, targetStatus);
                     
                     if (success)
                     {
@@ -513,7 +513,12 @@ namespace XBit.Pages
 
         private void CmbTeams_SelectedIndexChanged(object sender, EventArgs e)
         {
-            RefreshBoard();
+            var selected = cmbTeams.SelectedItem as Team;
+            if (selected != null)
+            {
+                currentTeamId = selected.Id;
+                RefreshBoard();
+            }
         }
 
         private void BtnInviteTeam_Click(object sender, EventArgs e)
@@ -526,7 +531,7 @@ namespace XBit.Pages
                 
                 if (user != null)
                 {
-                    bool success = _teamService.AddMember(currentTeamId, user.Id);
+                    bool success = _team_service_safe_addmember(currentTeamId, user.Id);
                     
                     if (success)
                     {
@@ -585,27 +590,29 @@ namespace XBit.Pages
 
         private void LoadTeams()
         {
-            // ?? 실제 DB에서 팀 목록 가져오기
-            var teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
-            
-            cmbTeams.Items.Clear();
-            
-            if (teams.Count == 0)
+            var teams = GetTeamsSafe(); // 안전 래퍼 호출
+
+            // 콤보박스 바인딩: DisplayMember/ValueMember 이용
+            cmbTeams.DisplayMember = "Name";
+            cmbTeams.ValueMember = "Id";
+            cmbTeams.DataSource = teams;
+
+            if (teams.Count > 0)
             {
-                // 기본 팀 생성
-                int teamId = _teamService.CreateTeam("내 팀", AuthService.CurrentUser.Id);
-                teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
-            }
-            
-            foreach (var team in teams)
-            {
-                cmbTeams.Items.Add(team.Name);
-                cmbTeams.Tag = team.Id; // 마지막 팀 ID 저장
-            }
-            
-            if (cmbTeams.Items.Count > 0)
-            {
+                currentTeamId = teams[0].Id;
                 cmbTeams.SelectedIndex = 0;
+            }
+            else
+            {
+                // 기본 팀 생성 및 다시 로드
+                int teamId = _team_service_safe_create("기본 팀", AuthService.CurrentUser.Id);
+                var newTeams = GetTeamsSafe();
+                if (newTeams.Count > 0)
+                {
+                    currentTeamId = newTeams[0].Id;
+                    cmbTeams.DataSource = newTeams;
+                    cmbTeams.SelectedIndex = 0;
+                }
             }
 
             AddSampleTasks();
@@ -620,11 +627,11 @@ namespace XBit.Pages
             {
                 // 샘플 데이터 추가
                 _taskService.AddTask("UI 디자인 완료", "김철수", 1, "할 일", currentTeamId);
-                _taskService.AddTask("API 문서화", "이영희", 2, "할 일", currentTeamId);
+                _task_service_safe_add("API 문서화", "이영희", 2, "할 일", currentTeamId);
                 _taskService.AddTask("데이터베이스 설계", "박민준", 2, "진행 중", currentTeamId);
                 _taskService.AddTask("테스트 케이스 작성", "최지은", 3, "진행 중", currentTeamId);
                 _taskService.AddTask("프로젝트 초기화", "김철수", 3, "완료", currentTeamId);
-                _taskService.AddTask("팀 미팅", "이영희", 4, "완료", currentTeamId);
+                _task_service_safe_add("팀 미팅", "이영희", 4, "완료", currentTeamId);
                 
                 // 다시 로드
                 tasks = _taskService.GetTasksByTeam(currentTeamId);
@@ -709,6 +716,92 @@ namespace XBit.Pages
             }
 
             lblTeamMembers.Text = "멤버: 4";
+        }
+
+        // 안전한 TeamService 호출 래퍼 (일관된 이름 사용)
+        private List<Team> GetTeamsSafe()
+        {
+            try
+            {
+                if (_teamService == null)
+                    _teamService = new TeamService();
+
+                var teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+                return teams ?? new List<Team>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] GetTeamsSafe 예외: {ex.Message}");
+                return new List<Team>();
+            }
+        }
+
+        // 안전한 TeamService - 팀 생성
+        private int _team_service_safe_create(string name, int ownerId)
+        {
+            try
+            {
+                if (_teamService == null)
+                    _teamService = new TeamService();
+
+                return _teamService.CreateTeam(name, ownerId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] CreateTeamSafe 예외: {ex.Message}");
+                return -1;
+            }
+        }
+
+        // 안전한 TeamService - AddMember 래퍼
+        private bool _team_service_safe_addmember(int teamId, int userId)
+        {
+            try
+            {
+                if (_teamService == null)
+                    _teamService = new TeamService();
+
+                return _teamService.AddMember(teamId, userId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] AddMemberSafe 예외: {ex.Message}");
+                return false;
+            }
+        }
+
+        // 안전한 TaskService 추가(호출 일관성 유지)
+        private bool _task_service_safe_update(int taskId, string status)
+        {
+            try
+            {
+                if (_taskService == null)
+                    _taskService = new TaskService();
+
+                return _taskService.UpdateTaskStatus(taskId, status);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] UpdateTaskStatusSafe 예외: {ex.Message}");
+                return false;
+            }
+        }
+
+        // 안전한 TaskService Add 래퍼 (샘플 추가에서 사용)
+        private bool _task_service_safe_add(string title, string assignee, int priority, string status, int teamId)
+        {
+            try
+            {
+                if (_taskService == null)
+                    _taskService = new TaskService();
+
+                return _taskService.AddTask(title, assignee, priority, status, teamId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] AddTaskSafe 예외: {ex.Message}");
+                return false;
+            }
         }
     }
 }

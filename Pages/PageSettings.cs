@@ -16,7 +16,6 @@ namespace XBit.Pages
             AutoScroll = true;
             Padding = new Padding(12);
 
-            // Controls는 역순으로 추가해야 DockStyle.Top으로 설정된 컨트롤이 순서대로 배치됨
             Controls.Add(MakeSection_DangerZone());
             Controls.Add(MakeSection_Integrations());
             Controls.Add(MakeSection_Security());
@@ -30,26 +29,21 @@ namespace XBit.Pages
             Theme.ThemeChanged += () => Theme.Apply(this);
         }
 
-        /// <summary>
-        /// 레이아웃 짤림 문제를 해결하고 카드 내부 여백을 확보하도록 수정
-        /// </summary>
         private Panel MakeSection(string titleText, Control content)
         {
-            // 카드 내부 여백 확보: Padding을 늘려서 섹션 제목과 내용의 시각적 안정성을 높임
             var title = new Label { Text = titleText };
             Theme.StyleTitle(title);
             title.Dock = DockStyle.Top;
 
-            content.Margin = new Padding(0, 5, 0, 0); // 제목과의 간격
+            content.Margin = new Padding(0, 5, 0, 0);
             content.Dock = DockStyle.Top;
 
-            // 제목과 내용을 모두 담을 FlowLayoutPanel 래퍼를 생성
             var flowWrapper = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 FlowDirection = FlowDirection.TopDown,
-                Padding = new Padding(20, 15, 20, 20) // ⭐️ 여백 증가 (좌우 20, 상 15, 하 20)
+                Padding = new Padding(20, 15, 20, 20)
             };
             flowWrapper.Controls.Add(title);
             flowWrapper.Controls.Add(content);
@@ -57,7 +51,7 @@ namespace XBit.Pages
             var card = new Panel
             {
                 Tag = "card",
-                Margin = new Padding(0, 0, 0, 20), // ⭐️ 섹션 간 간격 증가 (12 -> 20)
+                Margin = new Padding(0, 0, 0, 20),
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink
@@ -146,7 +140,7 @@ namespace XBit.Pages
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight // ⭐️ 수평 배치로 변경
+                FlowDirection = FlowDirection.LeftToRight
             };
 
             var chkDark = new CheckBox
@@ -154,12 +148,20 @@ namespace XBit.Pages
                 Text = "다크 모드 사용",
                 Checked = (Theme.Current == AppTheme.Dark),
                 AutoSize = true,
-                Margin = new Padding(0, 0, 20, 0) // ⭐️ 체크박스 간 수평 간격 추가
+                Margin = new Padding(0, 0, 20, 0)
             };
             chkDark.CheckedChanged += (_, __) =>
             {
+                // ⭐️ 수정: 테마 설정 및 전체 폼에 적용
                 Theme.Set(chkDark.Checked ? AppTheme.Dark : AppTheme.Light);
                 SettingsService.SetTheme(Theme.Current);
+                
+                // ⭐️ MainForm 찾아서 전체 UI 업데이트
+                var mainForm = FindForm() as MainForm;
+                if (mainForm != null)
+                {
+                    Theme.Apply(mainForm);
+                }
             };
 
             wrap.Controls.Add(chkDark);
@@ -173,8 +175,8 @@ namespace XBit.Pages
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight, // ⭐️ 수평 배치로 변경
-                WrapContents = true // 줄 바꿈 허용
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
             };
 
             var c1 = new CheckBox { Text = "앱 업데이트 알림", Checked = s.Notifications.AppUpdates, AutoSize = true, Margin = new Padding(0, 0, 20, 0) };
@@ -207,7 +209,7 @@ namespace XBit.Pages
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight, // ⭐️ 수평 배치로 변경
+                FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true
             };
 
@@ -235,7 +237,7 @@ namespace XBit.Pages
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight, // ⭐️ 수평 배치로 변경
+                FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true
             };
 
@@ -303,7 +305,12 @@ namespace XBit.Pages
                 {
                     SettingsService.Reset();
 
-                    Theme.Apply(this);
+                    // ⭐️ 수정: MainForm 전체에 테마 적용
+                    var mainForm = FindForm() as MainForm;
+                    if (mainForm != null)
+                    {
+                        Theme.Apply(mainForm);
+                    }
 
                     MessageBox.Show("초기화 완료", "완료");
                 }
@@ -330,7 +337,6 @@ namespace XBit.Pages
                     }
                 }
             };
-
 
             wrap.Controls.Add(btnReset);
             wrap.Controls.Add(btnDeleteAccount);

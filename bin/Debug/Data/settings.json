@@ -1,0 +1,35 @@
+{
+  "Profile": {
+    "DisplayName": "사용자",
+    "Email": "",
+    "AvatarPath": ""
+  },
+  "Account": {
+    "Username": "Local",
+    "Provider": "Local"
+  },
+  "Appearance": {
+    "Theme": "Dark"
+  },
+  "Notifications": {
+    "AppUpdates": true,
+    "AssignmentDue": true,
+    "PullRequests": true,
+    "Issues": true
+  },
+  "Privacy": {
+    "ShareUsageStats": true,
+    "ShowEmailInProfile": true
+  },
+  "Security": {
+    "RequirePasswordOnStart": true,
+    "BiometricEnabled": true
+  },
+  "Integrations": {
+    "GitHubToken": "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",
+    "GitHubUser": "jeonghun267",
+    "LocalRepoPath": "C:\\Users\\1\\source\\repos\\X BIT\\X BIT",
+    "ClassroomOrg": "jeonghun267",
+    "UseClassroom": true
+  }
+}
