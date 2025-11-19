@@ -557,6 +557,13 @@ namespace XBit.Pages
                 {
                     MessageBox.Show($"{changedFiles}개 파일 업로드 완료!", "성공", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     LoadData();
+
+                    // GitHub 동기화 성공 후 (PageHome 클래스 내)
+                    var mainForm = FindForm() as MainForm;
+                    if (mainForm != null)
+                    {
+                        mainForm.UpdateSyncStatus(); // 현재 시간으로 업데이트
+                    }
                 }
                 else
                 {

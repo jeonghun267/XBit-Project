@@ -22,6 +22,13 @@ namespace XBit
         private Timer notificationTimer;
         private NotificationService _notificationService = new NotificationService();
 
+        // 상태표시줄
+        private StatusStrip statusStrip;
+        private ToolStripStatusLabel statusUser;
+        private ToolStripStatusLabel statusSync;
+        private ToolStripStatusLabel statusTime;
+        private Timer clockTimer;
+
         public MainForm()
         {
             InitializeFormLayout();
@@ -31,6 +38,8 @@ namespace XBit
             UpdateBackButtonVisibility();
             InitializeNotificationTimer();
             UpdateNotificationBadge();
+            InitializeStatusStrip();
+            InitializeToolTips();
         }
 
         private void InitializeFormLayout()
@@ -113,6 +122,12 @@ namespace XBit
             return button;
         }
 
+        private void InitializeToolTips()
+        {
+            Theme.CreateToolTip(btnNotification, "알림");
+            Theme.CreateToolTip(btnBack, "뒤로가기");
+        }
+
         private void InitializeNotificationTimer()
         {
             // 30초마다 알림 개수 업데이트
@@ -124,11 +139,30 @@ namespace XBit
             notificationTimer.Start();
         }
 
+        private void InitializeStatusStrip()
+        {
+            statusStrip = new StatusStrip();
+            statusUser = new ToolStripStatusLabel { Text = AuthService.CurrentUser != null ? $"사용자: {AuthService.CurrentUser.Name}" : "사용자: -" };
+            statusSync = new ToolStripStatusLabel { Text = "마지막 동기화: N/A" };
+            statusTime = new ToolStripStatusLabel { Spring = true, Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), TextAlign = ContentAlignment.MiddleRight };
+
+            statusStrip.Items.Add(statusUser);
+            statusStrip.Items.Add(new ToolStripStatusLabel { Text = " | " });
+            statusStrip.Items.Add(statusSync);
+            statusStrip.Items.Add(statusTime);
+
+            this.Controls.Add(statusStrip);
+
+            clockTimer = new Timer { Interval = 1000 };
+            clockTimer.Tick += (s, e) => statusTime.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            clockTimer.Start();
+        }
+
         private void UpdateNotificationBadge()
         {
             if (AuthService.CurrentUser == null) return;
 
-            int unreadCount = _notificationService.GetUnreadCount(AuthService.CurrentUser.Id);
+            int unreadCount = _notification_service_safe(AuthService.CurrentUser.Id);
 
             if (unreadCount > 0)
             {
@@ -141,6 +175,18 @@ namespace XBit
             }
         }
 
+        private int _notification_service_safe(int userId)
+        {
+            try
+            {
+                return _notificationService.GetUnreadCount(userId);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         private void BtnNotification_Click(object sender, EventArgs e)
         {
             NavigateTo<PageNotifications>();
@@ -149,22 +195,21 @@ namespace XBit
 
         private void BtnMenu_Click(object sender, EventArgs e)
         {
-            var menuItems = new Dictionary<string, Action>
-            {
-                { "홈", () => NavigateTo<PageHome>() },
-                { "프로젝트", () => NavigateTo<PageAssignments>() },
-                { "게시판", () => NavigateTo<PageBoard>() },
-                { "협업", () => NavigateTo<PageProjectBoard>() },
-                { "알림", () => NavigateTo<PageNotifications>() },
-                { "설정", () => NavigateTo<PageSettings>() },
-                { "로그아웃", () => BtnLogout_Click(sender, e) }
-            };
-
             var menu = new ContextMenuStrip();
-            foreach (var item in menuItems)
-            {
-                menu.Items.Add(item.Key, null, (_, __) => item.Value());
-            }
+
+            // 기본 메뉴들
+            menu.Items.Add("홈", null, (_, __) => NavigateTo<PageHome>());
+            menu.Items.Add("프로젝트", null, (_, __) => NavigateTo<PageAssignments>());
+
+            // 통계 메뉴: 직접 타입으로 이동하도록 변경
+            // (이전에는 reflection으로 타입을 찾아서 페이지가 로드되지 않는 경우 MessageBox만 뜨던 문제 발생)
+            menu.Items.Add("통계", null, (_, __) => NavigateTo<PageStatistics>());
+
+            menu.Items.Add("게시판", null, (_, __) => NavigateTo<PageBoard>());
+            menu.Items.Add("협업", null, (_, __) => NavigateTo<PageProjectBoard>());
+            menu.Items.Add("알림", null, (_, __) => NavigateTo<PageNotifications>());
+            menu.Items.Add("설정", null, (_, __) => NavigateTo<PageSettings>());
+            menu.Items.Add("로그아웃", null, (_, __) => BtnLogout_Click(sender, e));
 
             menu.Show(Cursor.Position);
         }
@@ -178,7 +223,7 @@ namespace XBit
                 notificationTimer.Stop();
                 notificationTimer.Dispose();
             }
-
+            clockTimer?.Stop();
             AuthService.Logout();
             Application.Restart();
         }
@@ -244,7 +289,7 @@ namespace XBit
             else if (pageType == typeof(PageAssignments) && parameter is string filter)
             {
                 var page = (PageAssignments)Activator.CreateInstance(pageType);
-                page.FilterData(filter);
+                ((PageAssignments)page).FilterData(filter);
                 return page;
             }
             else if (pageType == typeof(PageSettings) && parameter is string sectionTag)
@@ -264,7 +309,23 @@ namespace XBit
                 notificationTimer.Stop();
                 notificationTimer.Dispose();
             }
+            clockTimer?.Stop();
             base.OnFormClosing(e);
+        }
+
+        // 동기 상태를 업데이트하는 헬퍼 (MainForm 클래스에 추가)
+        public void UpdateSyncStatus(string message = null)
+        {
+            if (statusSync == null) return;
+
+            if (string.IsNullOrEmpty(message))
+            {
+                statusSync.Text = $"마지막 동기화: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+            }
+            else
+            {
+                statusSync.Text = $"마지막 동기화: {message}";
+            }
         }
     }
 }
