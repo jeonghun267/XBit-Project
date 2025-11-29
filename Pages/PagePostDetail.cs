@@ -10,10 +10,10 @@ using System.Linq;
 
 namespace XBit.Pages
 {
-    public class PagePostDetail : UserControl
+    public partial class PagePostDetail : UserControl
     {
-        private BoardService _boardService = new BoardService();
-        private CommentService _commentService = new CommentService();
+        private readonly BoardService _boardService = new BoardService();
+        private readonly CommentService _commentService = new CommentService();
         private Post currentPost;
 
         private FlowLayoutPanel pnlComments ;
@@ -322,10 +322,11 @@ namespace XBit.Pages
 
         private Control CreateCommentInputPanel()
         {
+            // 입력창 더 길게: 높이 증가
             var pnlInput = new Panel
             {
                 Width = ContentWidth,
-                Height = 60,
+                Height = 180,
                 Margin = new Padding(0, 5, 0, 10)
             };
 
@@ -333,18 +334,19 @@ namespace XBit.Pages
             {
                 Dock = DockStyle.Fill,
                 Multiline = true,
-                Height = 60,
+                Height = 170,
                 BackColor = Theme.BgCard,
                 ForeColor = Theme.FgDefault,
-                TabStop = true
+                TabStop = true,
+                Font = new Font("Segoe UI", 10f)
             };
 
             btnAddComment = new Button
             {
                 Text = "등록",
                 Dock = DockStyle.Right,
-                Width = 80,
-                Height = 60
+                Width = 110,
+                Height = 170
             };
             Theme.StylePrimaryButton(btnAddComment);
 
@@ -443,9 +445,10 @@ namespace XBit.Pages
             {
                 Width = ContentWidth,
                 AutoSize = true,
-                Margin = new Padding(0, 5, 0, 5),
+                MinimumSize = new Size(ContentWidth, 110), // 최소 높이를 늘려 댓글 칸을 더 길게 보이게 함
+                Margin = new Padding(0, 8, 0, 12), // 세로 여유 증가
                 BackColor = Theme.BgCard,
-                Padding = new Padding(10),
+                Padding = new Padding(12),
                 BorderStyle = BorderStyle.FixedSingle,
                 ForeColor = Theme.Border
             };
@@ -455,27 +458,27 @@ namespace XBit.Pages
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 ColumnCount = 2,
-                RowCount = 2,
-                ColumnStyles = {
-                    new ColumnStyle(SizeType.Percent, 100),
-                    new ColumnStyle(SizeType.Absolute, 150)
-                }
+                RowCount = 2
             };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
 
             var lblContent = new Label
             {
                 Text = comment.Content,
                 ForeColor = Theme.FgDefault,
                 AutoSize = true,
-                MaximumSize = new Size(ContentWidth - 30, 0),
-                Margin = new Padding(0, 0, 0, 5)
+                MaximumSize = new Size(ContentWidth - 40, 0), // 여유를 두어 줄 바꿈이 자연스럽게 발생
+                Margin = new Padding(0, 0, 0, 10), // 하단 여백 증가
+                Font = new Font("Segoe UI", 10f)
             };
 
             var lblAuthorInfo = new Label
             {
                 Text = $"{comment.AuthorName} | {comment.CreatedDate:MM-dd HH:mm}",
                 ForeColor = Theme.FgMuted,
-                AutoSize = true
+                AutoSize = true,
+                Margin = new Padding(0, 4, 0, 0)
             };
 
             var pnlActions = new FlowLayoutPanel
@@ -483,36 +486,92 @@ namespace XBit.Pages
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.RightToLeft,
                 AutoSize = true,
-                Margin = new Padding(0)
+                Margin = new Padding(0),
+                WrapContents = false
             };
 
+            // 서비스에서 채워준 값 사용
             int likes = comment.Likes;
-            var lblLikes = new Label 
-            { 
-                Text = $"{likes}개", 
-                ForeColor = Theme.FgMuted, 
-                AutoSize = true, 
-                Margin = new Padding(5, 5, 5, 0) 
-            };
+            int dislikes = comment.Dislikes;
 
-            var btnLike = new Button 
-            { 
-                Text = $"👍 공감", 
-                Width = 70, 
-                Height = 25, 
+            // 이모지 버튼으로 변경 (아이콘처럼 보이도록 폰트 키움)
+            var btnLike = new Button
+            {
+                Text = "👍",
+                Width = 40,
+                Height = 30,
                 Tag = comment.Id,
-                Margin = new Padding(0, 0, 8, 0)
+                Margin = new Padding(0, 0, 4, 0),
+                Font = new Font("Segoe UI Emoji", 14f, FontStyle.Regular),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.Transparent
             };
+            btnLike.FlatAppearance.BorderSize = 0;
             Theme.StyleButton(btnLike);
             btnLike.Click += BtnLikeComment_Click;
 
-            if (comment.AuthorId == AuthService.CurrentUser.Id)
+            var lblLikes = new Label
             {
-                var btnDel = new Button 
-                { 
-                    Text = "삭제", 
-                    Width = 50, 
-                    Height = 25, 
+                Text = $"{likes}",
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Margin = new Padding(0, 6, 8, 0),
+                Font = new Font("Segoe UI", 9f)
+            };
+
+            var btnDislike = new Button
+            {
+                Text = "👎",
+                Width = 40,
+                Height = 30,
+                Tag = comment.Id,
+                Margin = new Padding(0, 0, 4, 0),
+                Font = new Font("Segoe UI Emoji", 14f, FontStyle.Regular),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.Transparent
+            };
+            btnDislike.FlatAppearance.BorderSize = 0;
+            Theme.StyleButton(btnDislike);
+            btnDislike.Click += BtnDislikeComment_Click;
+
+            var lblDislikes = new Label
+            {
+                Text = $"{dislikes}",
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Margin = new Padding(0, 6, 8, 0),
+                Font = new Font("Segoe UI", 9f)
+            };
+
+            // 각 반응을 하나의 작은 패널(버튼 + 레이블)로 묶음 — 버튼 옆에 숫자가 항상 붙도록 보장
+            var pnlLikePair = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            pnlLikePair.Controls.Add(btnLike);
+            pnlLikePair.Controls.Add(lblLikes);
+
+            var pnlDislikePair = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            pnlDislikePair.Controls.Add(btnDislike);
+            pnlDislikePair.Controls.Add(lblDislikes);
+
+            // 작성자 본인이면 삭제 버튼 추가 (가장 오른쪽에 위치)
+            if (comment.AuthorId == AuthService.CurrentUser?.Id)
+            {
+                var btnDel = new Button
+                {
+                    Text = "삭제",
+                    Width = 50,
+                    Height = 25,
                     Tag = comment.Id,
                     Margin = new Padding(0, 0, 8, 0)
                 };
@@ -521,17 +580,15 @@ namespace XBit.Pages
                 btnDel.Click += BtnDeleteComment_Click;
 
                 pnlActions.Controls.Add(btnDel);
-                pnlActions.Controls.SetChildIndex(btnDel, 0);
             }
 
-            pnlActions.Controls.Add(btnLike);
-            pnlActions.Controls.SetChildIndex(btnLike, comment.AuthorId == AuthService.CurrentUser.Id ? 1 : 0);
-            pnlActions.Controls.Add(lblLikes);
+            // 오른쪽부터: 싫어요 묶음, 좋아요 묶음
+            pnlActions.Controls.Add(pnlDislikePair);
+            pnlActions.Controls.Add(pnlLikePair);
 
             layout.Controls.Add(lblContent, 0, 0);
             layout.Controls.Add(lblAuthorInfo, 0, 1);
             layout.Controls.Add(pnlActions, 1, 1);
-            layout.SetRowSpan(pnlActions, 1);
 
             pnlComment.Controls.Add(layout);
 
@@ -583,14 +640,43 @@ namespace XBit.Pages
             var btn = sender as Button;
             if (btn == null || !(btn.Tag is int commentId)) return;
 
-            if (_commentService.IncrementLikes(commentId))
+            int userId = AuthService.CurrentUser?.Id ?? 0;
+            if (userId == 0)
             {
-                MessageBox.Show($"댓글 ID {commentId}에 공감했습니다.", "공감 완료");
-                LoadComments();
+                MessageBox.Show("로그인 후 사용할 수 있습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_commentService.AddReaction(commentId, userId, 1))
+            {
+                // 성공 시 UI 갱신
+                LoadComments(); // 또는 RefreshComments() 사용
             }
             else
             {
                 MessageBox.Show("공감 처리에 실패했습니다. (DB 오류)", "오류");
+            }
+        }
+
+        private void BtnDislikeComment_Click(object sender, EventArgs e)
+        {
+            var btn = sender as Button;
+            if (btn == null || !(btn.Tag is int commentId)) return;
+
+            int userId = AuthService.CurrentUser?.Id ?? 0;
+            if (userId == 0)
+            {
+                MessageBox.Show("로그인 후 사용할 수 있습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_commentService.AddReaction(commentId, userId, 0))
+            {
+                LoadComments();
+            }
+            else
+            {
+                MessageBox.Show("비공감 처리에 실패했습니다. (DB 오류)", "오류");
             }
         }
 

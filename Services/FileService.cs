@@ -23,7 +23,7 @@ namespace XBit.Services
         {
             if (!File.Exists(sourceFilePath))
             {
-                MessageBox.Show("원본 파일을 찾을 수 없습니다.", "제출 실패", 
+                MessageBox.Show("원본 파일을 찾을 수 없습니다.", "파일 오류", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
@@ -50,7 +50,7 @@ namespace XBit.Services
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"파일 제출 중 오류 발생: {ex.Message}", "제출 실패", 
+                MessageBox.Show($"파일 제출 중 오류 발생: {ex.Message}", "파일 오류", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
@@ -69,6 +69,42 @@ namespace XBit.Services
             }
 
             return new string[0];
+        }
+
+        // 제출 메모를 파일로 저장 (originalFileName 기반 .note.txt 생성)
+        public bool SaveSubmissionNote(int assignmentId, string originalFileName, string note)
+        {
+            try
+            {
+                string assignmentFolder = Path.Combine(SubmissionDirectory, $"Assignment_{assignmentId}");
+                if (!Directory.Exists(assignmentFolder))
+                {
+                    Directory.CreateDirectory(assignmentFolder);
+                }
+
+                // 원본 파일명에서 안전한 기본 이름 추출
+                string baseName = "submission";
+                if (!string.IsNullOrWhiteSpace(originalFileName))
+                {
+                    try
+                    {
+                        var fn = Path.GetFileNameWithoutExtension(originalFileName);
+                        if (!string.IsNullOrWhiteSpace(fn))
+                            baseName = fn;
+                    }
+                    catch { /* ignore, use default */ }
+                }
+
+                string noteFilePath = Path.Combine(assignmentFolder, baseName + ".note.txt");
+                File.WriteAllText(noteFilePath, note ?? "");
+                System.Diagnostics.Debug.WriteLine($"[FileService] 제출 메모 저장: {noteFilePath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[FileService] 제출 메모 저장 실패: {ex.Message}");
+                return false;
+            }
         }
     }
 }

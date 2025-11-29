@@ -69,9 +69,11 @@
     <Compile Include="Models\Project.cs" />
     <Compile Include="Models\ProjectTask.cs" />
     <Compile Include="Models\Settings.cs" />
-    <Compile Include="Models\StatisticsData.cs" />
     <Compile Include="Models\Team.cs" />
     <Compile Include="Pages\PageNotifications.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Pages\PagePostDetail.Comments.cs">
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Pages\PageProjectBoard.cs">
@@ -128,6 +130,7 @@
     <Compile Include="Services\GitHubService.cs" />
     <Compile Include="Services\NotificationService.cs" />
     <Compile Include="Services\SettingsService.cs" />
+    <Compile Include="Services\StatisticsData.cs" />
     <Compile Include="Services\StatisticsService.cs" />
     <Compile Include="Services\StatusHelper.cs" />
     <Compile Include="Services\TaskService.cs" />
@@ -136,6 +139,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Theme.cs" />
+    <Compile Include="UI\DoubleBufferedFlowLayoutPanel.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="UI\ToastForm.cs">
       <SubType>Form</SubType>
     </Compile>

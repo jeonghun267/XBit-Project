@@ -9,6 +9,18 @@ namespace XBit.Services
 {
     public class NotificationService
     {
+        // 알림 생성 이벤트 (구독자가 즉시 처리)
+        public static event Action<Notification> NotificationCreated;
+
+        // 단일 알림이 읽음으로 표시되었을 때 발생 (notificationId)
+        public static event Action<int> NotificationMarkedAsRead;
+
+        // 사용자에 대해 모든 알림이 읽음 처리되었을 때 발생 (userId)
+        public static event Action<int> NotificationsAllMarkedAsRead;
+
+        // 알림 삭제 이벤트 (notificationId)
+        public static event Action<int> NotificationDeleted;
+
         // 알림 생성
         public static bool Create(int userId, string title, string message, string type = "System", int? relatedId = null)
         {
@@ -30,7 +42,33 @@ namespace XBit.Services
                         cmd.Parameters.AddWithValue("@rid", relatedId.HasValue ? (object)relatedId.Value : DBNull.Value);
                         cmd.Parameters.AddWithValue("@date", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
 
-                        return cmd.ExecuteNonQuery() > 0;
+                        int rows = cmd.ExecuteNonQuery();
+                        if (rows > 0)
+                        {
+                            // 마지막 삽입 ID 조회 (SQLite)
+                            using (var idCmd = new SQLiteCommand("SELECT last_insert_rowid()", conn))
+                            {
+                                long lastId = (long)idCmd.ExecuteScalar();
+                                var notification = new Notification
+                                {
+                                    Id = (int)lastId,
+                                    UserId = userId,
+                                    Title = title,
+                                    Message = message,
+                                    Type = type,
+                                    IsRead = false,
+                                    RelatedId = relatedId,
+                                    CreatedDate = DateTime.Now
+                                };
+
+                                // 이벤트 발생 (구독자에게 즉시 전달)
+                                try { NotificationCreated?.Invoke(notification); } catch { /* 무시 */ }
+                            }
+
+                            return true;
+                        }
+
+                        return false;
                     }
                 }
                 catch
@@ -111,7 +149,13 @@ namespace XBit.Services
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", notificationId);
-                        return cmd.ExecuteNonQuery() > 0;
+                        int affected = cmd.ExecuteNonQuery();
+                        if (affected > 0)
+                        {
+                            try { NotificationMarkedAsRead?.Invoke(notificationId); } catch { }
+                            return true;
+                        }
+                        return false;
                     }
                 }
                 catch
@@ -134,7 +178,13 @@ namespace XBit.Services
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@uid", userId);
-                        return cmd.ExecuteNonQuery() > 0;
+                        int affected = cmd.ExecuteNonQuery();
+                        if (affected > 0)
+                        {
+                            try { NotificationsAllMarkedAsRead?.Invoke(userId); } catch { }
+                            return true;
+                        }
+                        return false;
                     }
                 }
                 catch
@@ -157,7 +207,13 @@ namespace XBit.Services
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", notificationId);
-                        return cmd.ExecuteNonQuery() > 0;
+                        int affected = cmd.ExecuteNonQuery();
+                        if (affected > 0)
+                        {
+                            try { NotificationDeleted?.Invoke(notificationId); } catch { }
+                            return true;
+                        }
+                        return false;
                     }
                 }
                 catch

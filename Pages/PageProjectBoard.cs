@@ -1,4 +1,4 @@
-// Pages/PageProjectBoard.cs (사용되지 않는 필드 제거 + TeamService 참조명 통일)
+// Pages/PageProjectBoard.cs (수정: 작업 추가/상태 이동 시 알림 생성, Tag 타입 안전화, 성공 MessageBox 제거, 대기 커서 적용)
 
 using System;
 using System.Windows.Forms;
@@ -34,7 +34,7 @@ namespace XBit.Pages
         private FlowLayoutPanel sourceContainer = null;
 
         private TaskService _taskService = new TaskService();
-        private TeamService _teamService = new TeamService(); // 필드명 통일: _team_service -> _team_service
+        private TeamService _team_service = new TeamService(); // 필드명 통일: _team_service
         private int currentTeamId = 1;  // 현재 선택된 팀 ID
 
         public PageProjectBoard()
@@ -287,6 +287,16 @@ namespace XBit.Pages
             return pnlKanban;
         }
 
+        // TaskCard의 Tag에 사용할 명시적 타입
+        private class TaskCardInfo
+        {
+            public int Id { get; set; }
+            public string Title { get; set; }
+            public string Assignee { get; set; }
+            public string Priority { get; set; } // "긴급", "높음" 등
+            public string Status { get; set; }   // "할 일", "진행 중", "완료" 등
+        }
+
         private Panel CreateTaskCard(string title, string assignee, int priority, int taskId = -1)
         {
             var card = new Panel
@@ -301,8 +311,15 @@ namespace XBit.Pages
                 AllowDrop = false
             };
 
-            // Tag에 Task ID 포함
-            card.Tag = new { Title = title, Assignee = assignee, Priority = priority, TaskId = taskId };
+            // Tag에 TaskCardInfo 사용 (익명 객체 제거)
+            card.Tag = new TaskCardInfo
+            {
+                Id = taskId,
+                Title = title,
+                Assignee = assignee,
+                Priority = GetPriorityLabel(priority),
+                Status = string.Empty
+            };
 
             var cardLayout = new TableLayoutPanel
             {
@@ -367,29 +384,27 @@ namespace XBit.Pages
 
         private void Card_MouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)
+            if (e.Button != MouseButtons.Left) return;
+
+            Control control = sender as Control;
+            Panel card = null;
+
+            // 카드(Panel)를 찾을 때까지 부모를 올라감
+            while (control != null)
             {
-                // sender가 Label이나 TableLayoutPanel일 수 있으므로 부모 찾기
-                Control control = sender as Control;
-                Panel card = null;
-
-                // 카드(Panel)를 찾을 때까지 부모를 올라감
-                while (control != null)
+                if (control is Panel p && p.Tag is TaskCardInfo)
                 {
-                    if (control is Panel && control.Tag != null)
-                    {
-                        card = control as Panel;
-                        break;
-                    }
-                    control = control.Parent;
+                    card = p;
+                    break;
                 }
+                control = control.Parent;
+            }
 
-                if (card != null)
-                {
-                    draggedCard = card;
-                    sourceContainer = card.Parent as FlowLayoutPanel;
-                    card.DoDragDrop(card, DragDropEffects.Move);
-                }
+            if (card != null)
+            {
+                draggedCard = card;
+                sourceContainer = card.Parent as FlowLayoutPanel;
+                card.DoDragDrop(card, DragDropEffects.Move);
             }
         }
 
@@ -423,92 +438,109 @@ namespace XBit.Pages
 
         private void TaskContainer_DragDrop(object sender, DragEventArgs e)
         {
-            var targetContainer = sender as FlowLayoutPanel;
-            if (targetContainer != null && draggedCard != null)
+            try
             {
+                var targetContainer = sender as FlowLayoutPanel;
+                if (targetContainer == null || draggedCard == null)
+                    return;
+
                 targetContainer.BackColor = Theme.BgMain;
 
                 if (sourceContainer == targetContainer)
-                {
                     return;
-                }
 
+                // UI 즉시 이동(시각적 피드백)
                 if (sourceContainer != null)
-                {
                     sourceContainer.Controls.Remove(draggedCard);
-                }
 
                 targetContainer.Controls.Add(draggedCard);
 
                 string sourceStatus = GetContainerStatus(sourceContainer);
                 string targetStatus = GetContainerStatus(targetContainer);
 
-                // DB에 저장
-                dynamic cardData = draggedCard.Tag;
-                if (cardData != null && cardData.TaskId > 0)
+                // Tag를 안전하게 캐스팅
+                var cardInfo = draggedCard.Tag as TaskCardInfo;
+                if (cardInfo != null && cardInfo.Id > 0)
                 {
-                    bool success = _task_service_safe_update(cardData.TaskId, targetStatus);
-                    
+                    bool success = false;
+                    try
+                    {
+                        this.UseWaitCursor = true;
+                        success = _task_service_safe_update(cardInfo.Id, targetStatus);
+                    }
+                    finally
+                    {
+                        this.UseWaitCursor = false;
+                    }
+
                     if (success)
                     {
-                        MessageBox.Show(
-                            "작업 이동 완료!\n\n" +
-                            "'" + sourceStatus + "' → '" + targetStatus + "'",
-                            "작업 상태 변경",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information
-                        );
+                        // 성공: MessageBox 제거 (시각적 이동으로 충분)
+                        // 상태 변경 알림 전송 (변경한 사람 제외)
+                        try
+                        {
+                            var members = _team_service.GetTeamMembers(currentTeamId);
+                            if (members != null)
+                            {
+                                foreach (var m in members)
+                                {
+                                    if (AuthService.CurrentUser != null && m.UserId == AuthService.CurrentUser.Id) continue;
+
+                                    var moverName = AuthService.CurrentUser != null
+                                        ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
+                                        : "시스템";
+
+                                    NotificationService.Create(
+                                        m.UserId,
+                                        "작업 상태가 변경되었습니다",
+                                        $"{moverName}님이 '{cardInfo.Title}' 작업을 '{targetStatus}'로 이동했습니다.",
+                                        "Task",
+                                        cardInfo.Id
+                                    );
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // 알림 실패는 치명적이지 않으므로 무시
+                        }
                     }
                     else
                     {
+                        // 실패 시: 사용자에게 명확히 알리고 UI 롤백
                         MessageBox.Show("데이터베이스 저장 실패!", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        // 실패 시 원래 컨테이너로 되돌림
-                        targetContainer.Controls.Remove(draggedCard);
-                        sourceContainer.Controls.Add(draggedCard);
+                        // 롤백 UI
+                        try
+                        {
+                            targetContainer.Controls.Remove(draggedCard);
+                            sourceContainer.Controls.Add(draggedCard);
+                        }
+                        catch { /* 무시 */ }
                     }
                 }
 
                 draggedCard = null;
                 sourceContainer = null;
             }
-        }
-
-        private string GetContainerStatus(FlowLayoutPanel container)
-        {
-            if (container == null) return "알 수 없음";
-
-            for (int i = 0; i < StatusCount; i++)
+            catch (Exception ex)
             {
-                if (pnlTasks[i] == container)
+                // 예외 발생 시 UI 롤백 및 에러 표시
+                try
                 {
-                    return lblStatusTitle[i].Text;
+                    if (draggedCard != null && sourceContainer != null)
+                    {
+                        var parent = draggedCard.Parent as FlowLayoutPanel;
+                        if (parent != null)
+                            parent.Controls.Remove(draggedCard);
+                        sourceContainer.Controls.Add(draggedCard);
+                    }
                 }
+                catch { /* 추가 실패 무시 */ }
+
+                MessageBox.Show("작업 이동 중 오류가 발생했습니다:\n" + ex.Message, "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                draggedCard = null;
+                sourceContainer = null;
             }
-            return "알 수 없음";
-        }
-
-        private Color GetPriorityColor(int priority)
-        {
-            if (priority == 1)
-                return Color.FromArgb(244, 67, 54);
-            else if (priority == 2)
-                return Color.FromArgb(255, 152, 0);
-            else if (priority == 3)
-                return Color.FromArgb(76, 175, 80);
-            else
-                return Color.FromArgb(189, 189, 189);
-        }
-
-        private string GetPriorityLabel(int priority)
-        {
-            if (priority == 1)
-                return "긴급";
-            else if (priority == 2)
-                return "높음";
-            else if (priority == 3)
-                return "보통";
-            else
-                return "낮음";
         }
 
         private void CmbTeams_SelectedIndexChanged(object sender, EventArgs e)
@@ -552,28 +584,90 @@ namespace XBit.Pages
 
         private void BtnAddTask_Click(object sender, EventArgs e)
         {
-            // ?? 향상된 작업 추가 다이얼로그
             using (var dialog = new TaskAddDialog())
             {
-                if (dialog.ShowDialog() == DialogResult.OK)
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+
+                try
                 {
-                    bool success = _taskService.AddTask(
-                        dialog.TaskTitle,
-                        dialog.Assignee,
-                        dialog.Priority,
-                        "할 일",
-                        currentTeamId
-                    );
+                    bool success = false;
+                    try
+                    {
+                        this.UseWaitCursor = true;
+                        success = _taskService.AddTask(
+                            dialog.TaskTitle,
+                            dialog.Assignee,
+                            dialog.Priority,
+                            "할 일",
+                            currentTeamId
+                        );
+                    }
+                    finally
+                    {
+                        this.UseWaitCursor = false;
+                    }
 
                     if (success)
                     {
-                        MessageBox.Show("작업이 추가되었습니다!", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        // 성공 시 MessageBox 제거 ? UI 갱신으로 충분
                         RefreshBoard();
+
+                        try
+                        {
+                            var members = _team_service.GetTeamMembers(currentTeamId);
+                            if (members != null)
+                            {
+                                foreach (var m in members)
+                                {
+                                    if (AuthService.CurrentUser != null && m.UserId == AuthService.CurrentUser.Id) continue;
+
+                                    var senderName = AuthService.CurrentUser != null
+                                        ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
+                                        : "시스템";
+
+                                    NotificationService.Create(
+                                        m.UserId,
+                                        "새 작업이 추가되었습니다",
+                                        $"{senderName}님이 '{dialog.TaskTitle}' 작업을 추가했습니다.",
+                                        "Task",
+                                        currentTeamId // RelatedId로 팀/보드 ID 전달
+                                    );
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // 알림 실패는 치명적이지 않으므로 무시
+                        }
+
+                        // 즉시 Home이 열려있으면 진행중 카운트 갱신
+                        try
+                        {
+                            var mainForm = FindForm() as MainForm;
+                            if (mainForm != null)
+                            {
+                                var home = mainForm.pnlContent.Controls.OfType<PageHome>().FirstOrDefault();
+                                if (home != null)
+                                {
+                                    home.LoadData();
+                                }
+
+                                mainForm.UpdateNotificationBadge();
+                            }
+                        }
+                        catch
+                        {
+                            // 무시
+                        }
                     }
                     else
                     {
                         MessageBox.Show("작업 추가 실패!", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("작업 추가 중 오류가 발생했습니다:\n" + ex.Message, "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
@@ -723,10 +817,10 @@ namespace XBit.Pages
         {
             try
             {
-                if (_teamService == null)
-                    _teamService = new TeamService();
+                if (_team_service == null)
+                    _team_service = new TeamService();
 
-                var teams = _teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+                var teams = _team_service.GetTeamsByUser(AuthService.CurrentUser.Id);
                 return teams ?? new List<Team>();
             }
             catch (Exception ex)
@@ -741,10 +835,10 @@ namespace XBit.Pages
         {
             try
             {
-                if (_teamService == null)
-                    _teamService = new TeamService();
+                if (_team_service == null)
+                    _team_service = new TeamService();
 
-                return _teamService.CreateTeam(name, ownerId);
+                return _team_service.CreateTeam(name, ownerId);
             }
             catch (Exception ex)
             {
@@ -758,10 +852,10 @@ namespace XBit.Pages
         {
             try
             {
-                if (_teamService == null)
-                    _teamService = new TeamService();
+                if (_team_service == null)
+                    _team_service = new TeamService();
 
-                return _teamService.AddMember(teamId, userId);
+                return _team_service.AddMember(teamId, userId);
             }
             catch (Exception ex)
             {
@@ -802,6 +896,46 @@ namespace XBit.Pages
                 System.Diagnostics.Debug.WriteLine($"[PageProjectBoard] AddTaskSafe 예외: {ex.Message}");
                 return false;
             }
+        }
+
+        // 헬퍼 메서드: GetPriorityLabel, GetPriorityColor, GetContainerStatus
+        // PageProjectBoard 클래스 내부에 위치해야 합니다.
+
+        private string GetPriorityLabel(int priority)
+        {
+            if (priority == 1)
+                return "긴급";
+            else if (priority == 2)
+                return "높음";
+            else if (priority == 3)
+                return "보통";
+            else
+                return "낮음";
+        }
+
+        private Color GetPriorityColor(int priority)
+        {
+            if (priority == 1)
+                return Color.FromArgb(244, 67, 54);
+            else if (priority == 2)
+                return Color.FromArgb(255, 152, 0);
+            else if (priority == 3)
+                return Color.FromArgb(76, 175, 80);
+            else
+                return Color.FromArgb(189, 189, 189);
+        }
+
+        private string GetContainerStatus(FlowLayoutPanel container)
+        {
+            if (container == null) return "알 수 없음";
+
+            for (int i = 0; i < StatusCount; i++)
+            {
+                if (pnlTasks[i] == container)
+                    return lblStatusTitle[i].Text;
+            }
+
+            return "알 수 없음";
         }
     }
 }

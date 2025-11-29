@@ -1,4 +1,4 @@
-﻿// Pages/PageAssignments.cs (검색창 위치 수정 버전)
+﻿// XBit/Pages/PageAssignments.cs (수정: 프로젝트 추가 시 알림 생성)
 
 using System;
 using System.Drawing;
@@ -286,6 +286,26 @@ namespace XBit.Pages
                         MessageBox.Show("프로젝트가 추가되었습니다!", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         LoadAllAssignments();
                         FilterData("ALL");
+
+                        try
+                        {
+                            // 프로젝트 추가 알림: 작성자 본인(또는 필요시 팀원에게도 보낼 수 있음)
+                            var senderName = AuthService.CurrentUser != null
+                                ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
+                                : "시스템";
+
+                            NotificationService.Create(
+                                AuthService.CurrentUser.Id,
+                                "새 프로젝트가 생성되었습니다",
+                                $"{senderName}님이 '{dialog.Title}' 프로젝트를 추가했습니다.",
+                                "Assignment",
+                                null
+                            );
+                        }
+                        catch
+                        {
+                            // 무시
+                        }
                     }
                     else
                     {

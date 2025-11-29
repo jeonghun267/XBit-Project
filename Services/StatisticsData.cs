@@ -1,3 +1,5 @@
+// XBit/Models/StatisticsData.cs
+
 using System;
 
 namespace XBit.Models
@@ -11,6 +13,6 @@ namespace XBit.Models
         public int TotalPosts { get; set; }
         public int MyPosts { get; set; }
         public int InProgressTasks { get; set; }
-        public int[] MonthlyActivity { get; set; }
+        public int[] MonthlyActivity { get; set; } // 최근 6개월 활동량
     }
 }

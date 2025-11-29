@@ -27,6 +27,7 @@ namespace XBit.Pages
         private System.Windows.Forms.Label lblTimeRemaining;    // ✅ 남은 시간
 
         private RichTextBox txtDescription;
+        private TextBox txtSubmissionNote; // 제출 메모 입력란 추가
         private Button btnFileSelect;
         private Button btnSubmit;
         private TextBox txtFilePath;
@@ -128,7 +129,7 @@ namespace XBit.Pages
                 Margin = new System.Windows.Forms.Padding(0, 5, 0, 0)
             };
 
-            // 설명
+            // 설명 (읽기 전용: 과제 설명을 보여주기 위한 위젯)
             txtDescription = new RichTextBox
             {
                 Text = "로딩 중...",
@@ -136,7 +137,20 @@ namespace XBit.Pages
                 Width = ContentWidth,
                 BackColor = Theme.BgCard,
                 ForeColor = Theme.FgDefault,
-                ReadOnly = true
+                ReadOnly = false  // 변경: 사용자가 직접 편집 가능
+            };
+
+            // 제출 메모: 사용자가 제출할 때 적는 내용 (편집 가능)
+            txtSubmissionNote = new TextBox
+            {
+                Multiline = true,
+                Height = 80,
+                Width = ContentWidth,
+                BackColor = Theme.BgCard,
+                ForeColor = Theme.FgDefault,
+                Text = "", // 빈 상태
+                AcceptsReturn = true,
+                ScrollBars = ScrollBars.Vertical
             };
 
             // 파일 선택 영역
@@ -213,6 +227,8 @@ namespace XBit.Pages
                 lblTimeRemaining,
                 new System.Windows.Forms.Label { Text = "설명:", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
                 txtDescription,
+                new System.Windows.Forms.Label { Text = "제출 메모 (선택):", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
+                txtSubmissionNote, // 제출 메모 입력란 추가
                 new System.Windows.Forms.Label { Text = "제출:", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
                 pnlSubmitRow,
                 lblFileInfo,
@@ -343,6 +359,7 @@ namespace XBit.Pages
             }
 
             string localFilePath = txtFilePath.Text;
+            string submissionNote = txtSubmissionNote.Text?.Trim(); // 제출 메모 읽기
 
             btnSubmit.Enabled = false;
             btnFileSelect.Enabled = false;
@@ -350,14 +367,65 @@ namespace XBit.Pages
 
             try
             {
-                _fileService.SubmitFile(localFilePath, currentAssignment.Id);
+                var fileCopied = _fileService.SubmitFile(localFilePath, currentAssignment.Id);
+
+                if (!fileCopied)
+                {
+                    throw new InvalidOperationException("파일 복사에 실패했습니다.");
+                }
+
+                // 제출 메모가 있으면 메모 저장
+                if (!string.IsNullOrEmpty(submissionNote))
+                {
+                    try
+                    {
+                        var fileName = Path.GetFileName(localFilePath);
+                        _fileService.SaveSubmissionNote(currentAssignment.Id, fileName, submissionNote);
+                    }
+                    catch
+                    {
+                        // 메모 저장 실패는 제출 실패로 처리하지 않음
+                    }
+                }
                 
                 // ⭐️ GitHub Classroom에 제출
                 string commitSha = await _gitHubService.CommitAndPushToClassroom(currentAssignment.Id, localFilePath);
                 string submissionUrl = await _gitHubService.GetSubmissionUrl(currentAssignment.Id);
 
-                // ⭐️ DB에 제출 완료 상태 + URL 저장
-                _assignmentService.UpdateAssignmentStatus(currentAssignment.Id, "제출 완료");
+                // ⭐️ DB에 제출 완료 상태 + URL 저장 (변경: 결과 확인)
+                bool updated = _assignmentService.UpdateAssignmentStatus(currentAssignment.Id, "제출 완료");
+
+                if (updated)
+                {
+                    // 알림 생성: 제출을 발생시킨 사용자(또는 필요시 다른 대상)에게 알림 생성
+                    try
+                    {
+                        var senderName = AuthService.CurrentUser != null
+                            ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
+                            : "시스템";
+
+                        NotificationService.Create(
+                            currentAssignment.UserId, // 수신자: 과제 소유자(필요시 변경)
+                            "과제 제출 완료",
+                            $"{senderName}님이 '{currentAssignment.Title}' 과제를 제출했습니다.",
+                            "Assignment",
+                            currentAssignment.Id
+                        );
+                    }
+                    catch
+                    {
+                        // 알림 실패는 치명적이지 않음
+                    }
+
+                    // 즉시 배지 갱신 보장 (PageNotifications가 열려있지 않아도)
+                    var mainForm = FindForm() as MainForm;
+                    mainForm?.UpdateNotificationBadge();
+                }
+                else
+                {
+                    // 업데이트 실패 시 사용자에게 알려줌
+                    System.Windows.Forms.MessageBox.Show("과제 상태 업데이트에 실패했습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
 
                 System.Windows.Forms.MessageBox.Show(
                     $"제출 완료!\n\n" +
@@ -368,8 +436,8 @@ namespace XBit.Pages
                     System.Windows.Forms.MessageBoxIcon.Information
                 );
 
-                var mainForm = FindForm() as MainForm;
-                mainForm?.GoBack();
+                var main = FindForm() as MainForm;
+                main?.GoBack();
             }
             catch (InvalidOperationException ex)
             {
