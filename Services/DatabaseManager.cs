@@ -1,5 +1,4 @@
-﻿// XBit/Services/DatabaseManager.cs (CommentLikes ReactionType 추가 및 Tasks FK 보강, 인덱스 추가, DumpDatabaseInfo 구현)
-
+﻿
 using System;
 using System.Data.SQLite;
 using System.IO;
@@ -10,12 +9,33 @@ namespace XBit.Services
 {
     public static class DatabaseManager
     {
-        private static readonly string DbFile = "Data/xbit.sqlite";
+        // 데이터 디렉터리 및 DB 파일을 내 문서\XBitData로 이동
+        public static string DataDirectory
+        {
+            get
+            {
+                var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                return Path.Combine(docs, "XBitData");
+            }
+        }
+
+        private static readonly string DbFileName = "xbit.sqlite";
         public static string ConnectionString { get; private set; }
 
         public static void Initialize()
         {
-            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DbFile);
+            // 폴더 보장
+            try
+            {
+                if (!Directory.Exists(DataDirectory))
+                    Directory.CreateDirectory(DataDirectory);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB] DataDirectory 생성 실패: {ex.Message}");
+            }
+
+            string dbPath = Path.Combine(DataDirectory, DbFileName);
             ConnectionString = $"Data Source={dbPath};Version=3;";
 
             System.Diagnostics.Debug.WriteLine($"[DB] 초기화 시작 - 경로: {dbPath}");
@@ -46,14 +66,14 @@ namespace XBit.Services
             CreateIndexes();
 
             AddInitialDataIfNeeded();
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 초기화 완료!");
         }
 
         private static void CreateTables()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 시작...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -177,14 +197,14 @@ namespace XBit.Services
                     );";
                 using (var cmd = new SQLiteCommand(sqlCreateCommentLikes, conn)) { cmd.ExecuteNonQuery(); }
             }
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 완료!");
         }
 
         private static void CreateIndexes()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 시작...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -234,7 +254,7 @@ namespace XBit.Services
                     }
                 }
             }
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 완료!");
         }
 
@@ -364,7 +384,7 @@ namespace XBit.Services
         private static void AddInitialDataIfNeeded()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 확인 중...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -385,10 +405,10 @@ namespace XBit.Services
                     if (userCount == 0)
                     {
                         System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 시작!");
-                        
+
                         string hashedPassword = AuthService.HashPassword("1234");
                         System.Diagnostics.Debug.WriteLine($"[DB] 해싱된 비밀번호: {hashedPassword.Substring(0, 10)}...");
-                        
+
                         string userSql = "INSERT INTO Users (Username, PasswordHash, Name, Role) VALUES (@u, @p, @n, @r); SELECT last_insert_rowid();";
                         int userId;
                         using (var cmd = new SQLiteCommand(userSql, conn))
@@ -399,7 +419,7 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@r", (int)UserRole.Admin);
                             userId = Convert.ToInt32(cmd.ExecuteScalar());
                         }
-                        
+
                         System.Diagnostics.Debug.WriteLine($"[DB] 사용자 생성됨 - ID: {userId}");
 
                         string assignmentSql = "INSERT INTO Assignments (Course, Title, DueDate, Status, UserId) VALUES (@c, @t, @d, @s, @uid)";
@@ -438,7 +458,7 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@cd", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.ExecuteNonQuery();
                         }
-                        
+
                         System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 완료!");
                     }
                     else
@@ -447,7 +467,7 @@ namespace XBit.Services
                     }
                 }
             }
-        }   
+        }
 
         // 간단한 DB 정보 덤프 (디버그용)
         public static string DumpDatabaseInfo()

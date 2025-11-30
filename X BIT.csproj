@@ -133,6 +133,7 @@
     <Compile Include="Services\StatisticsData.cs" />
     <Compile Include="Services\StatisticsService.cs" />
     <Compile Include="Services\StatusHelper.cs" />
+    <Compile Include="Services\TaskRepository.cs" />
     <Compile Include="Services\TaskService.cs" />
     <Compile Include="Services\TeamService.cs" />
     <Compile Include="TermsAndConditionsForm.cs">

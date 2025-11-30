@@ -1,4 +1,4 @@
-﻿// Pages/PageHome.cs (개선된 버전)
+﻿// Pages/PageHome.cs (중복 메서드 제거, 통계 로직 유지)
 
 using System.Threading.Tasks;
 using System.Drawing;
@@ -245,11 +245,37 @@ namespace XBit.Pages
 
                 chartPanel.Controls.Clear();
 
-                // 도넛 차트 (완료율)
                 int donutSize = Math.Min(240, Math.Max(120, chartPanel.Width / 2 - 20));
-                int total = Math.Max(1, stats.TotalAssignments);
 
-                // 도넛 위 제목 (예: "완료율") - 먼저 추가해서 위치 계산에 사용
+                int totalTasks = 0;
+                int completedTasks = 0;
+                try
+                {
+                    var teamService = new TeamService();
+                    var userTeams = teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+                    foreach (var team in userTeams)
+                    {
+                        var tasks = _task_service.GetTasksByTeam(team.Id);
+                        if (tasks == null) continue;
+
+                        totalTasks += tasks.Count;
+                        completedTasks += tasks.Count(t =>
+                            string.Equals(t.Status, "완료", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)
+                            || (t.Status != null && t.Status.IndexOf("완료", StringComparison.OrdinalIgnoreCase) >= 0)
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PageHome] Task counts load error: {ex.Message}");
+                    totalTasks = Math.Max(1, stats?.TotalAssignments ?? 1);
+                    completedTasks = stats?.CompletedAssignments ?? 0;
+                }
+
+                int donutTotal = Math.Max(1, totalTasks);
+                int donutCompleted = Math.Max(0, completedTasks);
+
                 var lblDonutTitle = new Label
                 {
                     Text = "완료율",
@@ -261,15 +287,14 @@ namespace XBit.Pages
                 };
                 chartPanel.Controls.Add(lblDonutTitle);
 
-                var donut = Theme.CreateDonutChart(stats.CompletedAssignments, total, Theme.Success, "완료율", donutSize);
+                var donut = Theme.CreateDonutChart(donutCompleted, donutTotal, Theme.Success, "완료율", donutSize);
                 donut.Tag = "donut";
                 donut.Location = new Point((chartPanel.Width / 2 - donut.Width) / 2, (chartPanel.Height - donut.Height) / 2);
                 chartPanel.Controls.Add(donut);
 
-                // 도넛 아래 숫자 레이블 (예: 12/20 완료)
                 var lblDonutInfo = new Label
                 {
-                    Text = $"{stats.CompletedAssignments}/{total} 완료",
+                    Text = $"{donutCompleted}/{donutTotal} 완료",
                     Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
                     ForeColor = Theme.FgPrimary,
                     BackColor = Color.Transparent,
@@ -278,62 +303,61 @@ namespace XBit.Pages
                 };
                 chartPanel.Controls.Add(lblDonutInfo);
 
-                // 트렌드 라인 (월별 활동)
-                int trendW = Math.Max(220, chartPanel.Width - donut.Width - 40);
-                int trendH = Math.Max(160, chartPanel.Height - 20);
-                var trend = Theme.CreateTrendLine(stats.MonthlyActivity ?? new int[] { 0, 0, 0, 0, 0, 0 }, Theme.Primary, trendW, trendH);
-                trend.Tag = "trend";
-                chartPanel.Controls.Add(trend);
-
-                // 트렌드 위 제목 (작게)
-                var lblTrendTitle = new Label
+                // --- 기존 트렌드(꺾은선) 대신: 이번 달 출석 캘린더 로드 ---
+                try
                 {
-                    Text = "최근 6개월 활동",
-                    Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
-                    ForeColor = Theme.FgPrimary,
-                    BackColor = Color.Transparent,
-                    AutoSize = true,
-                    Tag = "trendTitle"
-                };
-                chartPanel.Controls.Add(lblTrendTitle);
+                    int year = DateTime.Now.Year;
+                    int month = DateTime.Now.Month;
+                    var activeDates = new List<DateTime>();
 
-                // 즉시 위치 계산 및 전면으로 올리기
-                var donutControl = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => c.Tag as string == "donut");
-                var trendControl = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => c.Tag as string == "trend");
-                var donutTitle = chartPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "donutTitle");
-                var donutInfoLabel = chartPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "donutInfo");
-                var trendTitleLabel = chartPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "trendTitle");
+                    // 게시물로부터 활동일 수집 (작성일)
+                    try
+                    {
+                        var allPosts = _board_service.GetAllPosts();
+                        if (allPosts != null)
+                        {
+                            foreach (var p in allPosts)
+                            {
+                                if (p.AuthorId == AuthService.CurrentUser.Id && p.CreatedDate.Year == year && p.CreatedDate.Month == month)
+                                {
+                                    activeDates.Add(p.CreatedDate.Date);
+                                }
+                            }
+                        }
+                    }
+                    catch { /* 게시물 수집 실패 무시 */ }
 
-                if (donutControl != null && trendControl != null)
+                    // 제출된 과제(대체 데이터)로부터 활동일 수집 (DueDate 기준)
+                    try
+                    {
+                        var assignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id);
+                        if (assignments != null)
+                        {
+                            foreach (var a in assignments)
+                            {
+                                if (string.Equals(a.Status, "제출 완료", StringComparison.OrdinalIgnoreCase)
+                                    && a.DueDate.Year == year && a.DueDate.Month == month)
+                                {
+                                    activeDates.Add(a.DueDate.Date);
+                                }
+                            }
+                        }
+                    }
+                    catch { /* 과제 수집 실패 무시 */ }
+
+                    // 중복 제거
+                    activeDates = activeDates.Select(d => d.Date).Distinct().ToList();
+
+                    // 캘린더 로드
+                    LoadAttendanceCalendar(year, month, activeDates);
+                }
+                catch (Exception ex)
                 {
-                    donutControl.Location = new Point((chartPanel.Width / 2 - donutControl.Width) / 2, (chartPanel.Height - donutControl.Height) / 2);
-                    trendControl.Location = new Point(chartPanel.Width / 2 + (chartPanel.Width / 2 - trendControl.Width) / 2, (chartPanel.Height - trendControl.Height) / 2);
-
-                    if (donutTitle != null)
-                    {
-                        var ttSize = TextRenderer.MeasureText(donutTitle.Text, donutTitle.Font);
-                        donutTitle.Location = new Point(donutControl.Left + (donutControl.Width - ttSize.Width) / 2, Math.Max(6, donutControl.Top - ttSize.Height - 6));
-                        donutTitle.BringToFront();
-                    }
-
-                    if (donutInfoLabel != null)
-                    {
-                        var infoSize = TextRenderer.MeasureText(donutInfoLabel.Text, donutInfoLabel.Font);
-                        donutInfoLabel.Location = new Point(donutControl.Left + (donutControl.Width - infoSize.Width) / 2, donutControl.Bottom + 6);
-                        donutInfoLabel.BringToFront();
-                    }
-
-                    if (trendTitleLabel != null)
-                    {
-                        var tSize2 = TextRenderer.MeasureText(trendTitleLabel.Text, trendTitleLabel.Font);
-                        trendTitleLabel.Location = new Point(trendControl.Left + (trendControl.Width - tSize2.Width) / 2, Math.Max(6, trendControl.Top - tSize2.Height - 6));
-                        trendTitleLabel.BringToFront();
-                    }
+                    Debug.WriteLine($"[PageHome] Attendance calendar build failed: {ex.Message}");
                 }
 
-                // 툴팁 추가: 마우스 오버 시 설명 제공
-                Theme.CreateToolTip(donut, $"완료된 프로젝트: {stats.CompletedAssignments} / 총 {total}");
-                Theme.CreateToolTip(trend, "최근 6개월의 과제/게시물 활동 추이입니다.");
+                // 도넛 툴팁
+                Theme.CreateToolTip(donut, $"완료된 작업: {donutCompleted} / 총 작업: {donutTotal}");
 
                 chartPanel.Invalidate();
             }
@@ -671,6 +695,114 @@ namespace XBit.Pages
                 }
                 else { MessageBox.Show("동기화 실패!\n토큰과 권한을 확인하세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
+        }
+        // PageHome: 출석 캘린더 로더
+        private void LoadAttendanceCalendar(int year, int month, List<DateTime> activeDates)
+        {
+            if (pnlStats == null) return;
+            var dict = pnlStats.Tag as Dictionary<string, Control>;
+            if (dict == null || !dict.ContainsKey("chartPanel")) return;
+            var chartPanel = dict["chartPanel"] as Panel;
+            if (chartPanel == null) return;
+
+            // 이전 캘린더 제거 (재호출 대비)
+            var existing = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "attendanceCalendar");
+            if (existing != null) chartPanel.Controls.Remove(existing);
+
+            // 캘린더 크기/위치 산정 (donut 오른쪽에 배치)
+            var donutControl = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "donut");
+            int calWidth = donutControl != null ? Math.Max(220, chartPanel.Width - donutControl.Width - 40) : Math.Max(300, chartPanel.Width - 40);
+            int calHeight = Math.Max(160, chartPanel.Height - 20);
+
+            var cal = new FlowLayoutPanel
+            {
+                Tag = "attendanceCalendar",
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                Width = calWidth,
+                Height = calHeight,
+                BackColor = Color.Transparent,
+                Padding = new Padding(2),
+                Margin = new Padding(0)
+            };
+
+            // 위치 설정: donut 오른쪽이면 오른쪽 중앙, 없으면 가운데
+            if (donutControl != null)
+            {
+                cal.Location = new Point(chartPanel.Width / 2 + (chartPanel.Width / 2 - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
+            }
+            else
+            {
+                cal.Location = new Point((chartPanel.Width - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
+            }
+
+            // 요일 헤더 (일~토)
+            string[] dayNames = new[] { "일", "월", "화", "수", "목", "금", "토" };
+            int cellSize = Math.Max(28, Math.Min(46, calWidth / 8));
+            foreach (var dn in dayNames)
+            {
+                var lbl = new Label
+                {
+                    Text = dn,
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Width = cellSize,
+                    Height = 20,
+                    ForeColor = Theme.FgMuted,
+                    BackColor = Color.Transparent,
+                    Margin = new Padding(2)
+                };
+                cal.Controls.Add(lbl);
+            }
+
+            // 달력 시작 오프셋(1일의 요일)
+            var firstOfMonth = new DateTime(year, month, 1);
+            int offset = (int)firstOfMonth.DayOfWeek; // Sunday=0 ... Saturday=6
+
+            // 빈칸 채우기
+            for (int i = 0; i < offset; i++)
+            {
+                var placeholder = new Panel
+                {
+                    Width = cellSize,
+                    Height = cellSize,
+                    BackColor = Color.Transparent,
+                    Margin = new Padding(2)
+                };
+                cal.Controls.Add(placeholder);
+            }
+
+            // activeDates 집합(날짜 비교는 Date 부분만)
+            var activeSet = new HashSet<DateTime>((activeDates ?? new List<DateTime>()).Select(d => d.Date));
+
+            // 날짜 버튼 생성
+            int daysInMonth = DateTime.DaysInMonth(year, month);
+            for (int d = 1; d <= daysInMonth; d++)
+            {
+                var dt = new DateTime(year, month, d);
+                bool isActive = activeSet.Contains(dt.Date);
+
+                var btn = new Button
+                {
+                    Text = d.ToString(),
+                    Width = cellSize,
+                    Height = cellSize,
+                    BackColor = isActive ? Color.SeaGreen : Color.FromArgb(40, 40, 40),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Margin = new Padding(2),
+                    Tag = dt.Date,
+                    Enabled = false // 클릭 동작이 필요하면 true로 바꿔 핸들러 추가
+                };
+                // 모던 스타일: 테두리 제거
+                btn.FlatAppearance.BorderSize = 0;
+
+                cal.Controls.Add(btn);
+            }
+
+            // 캘린더를 차트 패널에 추가
+            chartPanel.Controls.Add(cal);
+            cal.BringToFront();
         }
     }
 }
