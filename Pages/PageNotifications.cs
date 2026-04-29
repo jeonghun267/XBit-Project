@@ -1,5 +1,3 @@
-// XBit/Pages/PageNotifications.cs
-
 using System;
 using System.Drawing;
 using System.Linq;
@@ -22,11 +20,12 @@ namespace XBit.Pages
             InitializeUI();
             LoadNotifications();
 
-            // ÀÌº¥Æ® ±¸µ¶: »õ·Î¿î ¾Ë¸² Ãß°¡, ´ÜÀÏ/ÀüÃ¼ ÀÐÀ½, »èÁ¦
             NotificationService.NotificationCreated += OnNotificationCreated;
             NotificationService.NotificationMarkedAsRead += OnNotificationMarkedAsRead;
             NotificationService.NotificationsAllMarkedAsRead += OnNotificationsAllMarkedAsRead;
             NotificationService.NotificationDeleted += OnNotificationDeleted;
+
+            Theme.ThemeChanged += () => Theme.Apply(this);
         }
 
         protected override void Dispose(bool disposing)
@@ -53,16 +52,16 @@ namespace XBit.Pages
 
             var lblTitle = new Label
             {
-                Text = "¾Ë¸²",
-                Font = new Font("¸¼Àº °íµñ", 16f, FontStyle.Bold),
+                Text = "ì•Œë¦¼",
+                Font = new Font("ë§‘ì€ ê³ ë”•", 16f, FontStyle.Bold),
                 ForeColor = Theme.FgDefault,
                 AutoSize = true,
-                Location = new Point(15, 15) 
+                Location = new Point(15, 15)
             };
 
             var btnMarkAllRead = new Button
             {
-                Text = "¸ðµÎ ÀÐÀ½",
+                Text = "ëª¨ë‘ ì½ìŒ",
                 Width = 100,
                 Height = 35,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
@@ -87,16 +86,12 @@ namespace XBit.Pages
                 WrapContents = false
             };
 
-            // ¹ÝÀÀÇü: ÄÁÅ×ÀÌ³Ê Å©±â º¯°æ ½Ã Ä«µå ³Êºñ °»½Å
             pnlNotifications.Resize += (s, e) =>
             {
                 foreach (Control c in pnlNotifications.Controls)
                 {
                     if (c is Panel card)
-                    {
                         card.Width = Math.Max(600, pnlNotifications.ClientSize.Width - 40);
-                        // Àç°è»êÀÌ ÇÊ¿äÇÑ ³»ºÎ ¶óº§µé ÀÚµ¿ ·¹ÀÌ¾Æ¿ôÀ¸·Î Ã³¸®
-                    }
                 }
             };
 
@@ -108,39 +103,42 @@ namespace XBit.Pages
         {
             pnlNotifications.Controls.Clear();
 
-            // º¯°æ: ÀÐÁö ¾ÊÀº ¾Ë¸²¸¸ Ç¥½ÃÇÏµµ·Ï (ÀÐÀ½ Ã³¸® ½Ã ¸ñ·Ï¿¡¼­ »ç¶óÁü)
             var notifications = _notificationService.GetNotifications(AuthService.CurrentUser.Id, unreadOnly: true);
 
             if (notifications.Count == 0)
             {
-                var lblEmpty = new Label
-                {
-                    Text = "¾Ë¸²ÀÌ ¾ø½À´Ï´Ù.",
-                    Font = new Font("¸¼Àº °íµñ", 12f),
-                    ForeColor = Theme.FgMuted,
-                    AutoSize = true,
-                    Padding = new Padding(20)
-                };
-                pnlNotifications.Controls.Add(lblEmpty);
+                pnlNotifications.Controls.Add(MakeEmptyLabel());
                 return;
             }
 
             foreach (var notification in notifications)
-            {
                 pnlNotifications.Controls.Add(CreateNotificationCard(notification));
-            }
+        }
+
+        private Label MakeEmptyLabel()
+        {
+            return new Label
+            {
+                Text = "ì•Œë¦¼ì´ ì—†ìŠµë‹ˆë‹¤.",
+                Font = new Font("ë§‘ì€ ê³ ë”•", 12f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Padding = new Padding(20)
+            };
         }
 
         private Panel CreateNotificationCard(Notification notification)
         {
-            // ´õ ³Ð°í ÀÐ±â ½¬¿î Ä«µå ½ºÅ¸ÀÏ
             var cardWidth = Math.Max(600, pnlNotifications.ClientSize.Width - 40);
 
             var card = new Panel
             {
                 Width = cardWidth,
                 Height = 110,
-                BackColor = notification.IsRead ? Theme.BgCard : Color.FromArgb(240, 248, 255),
+                BackColor = notification.IsRead ? Theme.BgCard : Color.FromArgb(
+                    Theme.Current == AppTheme.Dark ? 30 : 240,
+                    Theme.Current == AppTheme.Dark ? 50 : 248,
+                    Theme.Current == AppTheme.Dark ? 80 : 255),
                 Margin = new Padding(0, 0, 0, 12),
                 Padding = new Padding(16),
                 Cursor = Cursors.Hand,
@@ -148,43 +146,39 @@ namespace XBit.Pages
             };
             Theme.StyleCard(card);
 
-            // Á¦¸ñ
             var lblTitle = new Label
             {
                 Text = notification.Title,
-                Font = new Font("¸¼Àº °íµñ", 11f, FontStyle.Bold),
+                Font = new Font("ë§‘ì€ ê³ ë”•", 11f, FontStyle.Bold),
                 ForeColor = Theme.FgDefault,
                 AutoSize = false,
                 Location = new Point(10, 8),
                 Size = new Size(card.Width - 140, 22)
             };
 
-            // ¸Þ½ÃÁö (wrap, multiline)
             var lblMessage = new Label
             {
                 Text = notification.Message,
-                Font = new Font("¸¼Àº °íµñ", 10f),
+                Font = new Font("ë§‘ì€ ê³ ë”•", 10f),
                 ForeColor = Theme.FgMuted,
                 AutoSize = false,
                 Location = new Point(10, 34),
                 Size = new Size(card.Width - 140, 36)
             };
 
-            // º¸³½ÀÌ
             var lblSender = new Label
             {
-                Text = $"º¸³½ÀÌ: {(!string.IsNullOrWhiteSpace(notification.Type) ? notification.Type : "½Ã½ºÅÛ")}",
-                Font = new Font("¸¼Àº °íµñ", 9f, FontStyle.Italic),
+                Text = $"ìœ í˜•: {(!string.IsNullOrWhiteSpace(notification.Type) ? notification.Type : "ì‹œìŠ¤í…œ")}",
+                Font = new Font("ë§‘ì€ ê³ ë”•", 9f, FontStyle.Italic),
                 ForeColor = Theme.FgMuted,
                 AutoSize = true,
                 Location = new Point(10, 74)
             };
 
-            // Á¤È®ÇÑ ¼ö½Å ½Ã°£ (ÇÏ´Ü ¿ìÃø)
-            var lblExactTime = new Label
+            var lblTime = new Label
             {
                 Text = notification.CreatedDate.ToString("yyyy-MM-dd HH:mm"),
-                Font = new Font("¸¼Àº °íµñ", 9f),
+                Font = new Font("ë§‘ì€ ê³ ë”•", 9f),
                 ForeColor = Theme.FgMuted,
                 AutoSize = true,
                 Location = new Point(card.Width - 120, 76),
@@ -194,52 +188,41 @@ namespace XBit.Pages
             card.Controls.Add(lblTitle);
             card.Controls.Add(lblMessage);
             card.Controls.Add(lblSender);
-            card.Controls.Add(lblExactTime);
+            card.Controls.Add(lblTime);
 
-            // Å¬¸¯ Ã³¸® ·ÎÁ÷
             EventHandler onCardClicked = (s, e) =>
             {
                 try
                 {
                     if (!notification.IsRead)
                     {
-                        var ok = _notificationService.MarkAsRead(notification.Id);
-                        if (ok)
+                        if (_notificationService.MarkAsRead(notification.Id))
                         {
-                            // ÀÐÀ½ Ã³¸®µÇ¸é ÇöÀç Ä«µå Á¦°Å
                             if (pnlNotifications.Controls.Contains(card))
                                 pnlNotifications.Controls.Remove(card);
 
-                            // »ó´Ü ¹èÁö °»½Å È£Ãâ (MainForm¿¡ ±¸ÇöµÈ ¸Þ¼­µå »ç¿ë)
-                            var mainForm = FindForm() as MainForm;
-                            mainForm?.UpdateNotificationBadge();
+                            if (pnlNotifications.Controls.Count == 0)
+                                pnlNotifications.Controls.Add(MakeEmptyLabel());
+
+                            (FindForm() as MainForm)?.UpdateNotificationBadge();
                         }
                     }
 
                     if (notification.RelatedId.HasValue)
-                    {
                         NavigateToRelated(notification.Type, notification.RelatedId.Value);
-                    }
                 }
-                catch
-                {
-                    // ·Î±ë/¹«½Ã
-                }
+                catch { }
             };
 
-            // Ä«µå¿Í ³»ºÎ ÄÁÆ®·Ñ ¸ðµÎ µ¿ÀÏÇÑ ÇÚµé·¯ ¿¬°á
             card.Click += onCardClicked;
             foreach (Control child in card.Controls)
-            {
                 child.Click += onCardClicked;
-            }
 
-            // Ä«µå ³Êºñ°¡ º¯°æµÉ °æ¿ì ³»ºÎ ¿ä¼Ò À§Ä¡ º¸Á¤
             card.Resize += (s, e) =>
             {
                 lblTitle.Size = new Size(card.Width - 140, lblTitle.Height);
                 lblMessage.Size = new Size(card.Width - 140, lblMessage.Height);
-                lblExactTime.Location = new Point(card.Width - 120, lblExactTime.Location.Y);
+                lblTime.Location = new Point(card.Width - 120, lblTime.Location.Y);
             };
 
             return card;
@@ -253,16 +236,15 @@ namespace XBit.Pages
             switch (type)
             {
                 case "Task":
+                case "Team":
                     mainForm.NavigateTo<PageProjectBoard>();
                     break;
                 case "Assignment":
                     mainForm.NavigateTo<PageAssignmentDetail>(relatedId);
                     break;
-                case "Team":
-                    mainForm.NavigateTo<PageProjectBoard>();
-                    break;
-                default:
-                    // ½Ã½ºÅÛ µî ±âÅ¸ Å¸ÀÔÀº ¾Ë¸² »ó¼¼ ÆäÀÌÁö°¡ ¾øÀ¸¸é ¹«½Ã
+                case "Post":
+                case "Board":
+                    mainForm.NavigateTo<PagePostDetail>(relatedId);
                     break;
             }
         }
@@ -271,46 +253,30 @@ namespace XBit.Pages
         {
             _notificationService.MarkAllAsRead(AuthService.CurrentUser.Id);
             LoadNotifications();
-            MessageBox.Show("¸ðµç ¾Ë¸²À» ÀÐÀ½ Ã³¸®Çß½À´Ï´Ù.", "¿Ï·á", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            // »ó´Ü ¹èÁö °»½Å
-            var mainForm = FindForm() as MainForm;
-            mainForm?.UpdateNotificationBadge();
+            MessageBox.Show("ëª¨ë“  ì•Œë¦¼ì„ ì½ìŒ ì²˜ë¦¬í–ˆìŠµë‹ˆë‹¤.", "ì™„ë£Œ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            (FindForm() as MainForm)?.UpdateNotificationBadge();
         }
 
-        // ÀÌº¥Æ® ÇÚµé·¯: »õ ¾Ë¸²ÀÌ »ý¼ºµÇ¸é(°°Àº ÇÁ·Î¼¼½º) Áï½Ã Ãß°¡
         private void OnNotificationCreated(Notification n)
         {
             if (AuthService.CurrentUser == null || n.UserId != AuthService.CurrentUser.Id) return;
 
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(() => OnNotificationCreated(n)));
-                return;
-            }
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnNotificationCreated(n))); return; }
 
-            // "¾Ë¸²ÀÌ ¾ø½À´Ï´Ù." ¶óº§ Á¦°Å
-            var empty = pnlNotifications.Controls.OfType<Label>().FirstOrDefault(l => l.Text == "¾Ë¸²ÀÌ ¾ø½À´Ï´Ù.");
+            var empty = pnlNotifications.Controls.OfType<Label>().FirstOrDefault(l => l.Text == "ì•Œë¦¼ì´ ì—†ìŠµë‹ˆë‹¤.");
             if (empty != null) pnlNotifications.Controls.Remove(empty);
 
             var card = CreateNotificationCard(n);
             pnlNotifications.Controls.Add(card);
-            pnlNotifications.Controls.SetChildIndex(card, 0); // ¸Ç À§¿¡ Ãß°¡
+            pnlNotifications.Controls.SetChildIndex(card, 0);
 
-            // ¹èÁö °»½Å
-            var mainForm = FindForm() as MainForm;
-            mainForm?.UpdateNotificationBadge();
+            (FindForm() as MainForm)?.UpdateNotificationBadge();
         }
 
         private void OnNotificationMarkedAsRead(int notificationId)
         {
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(() => OnNotificationMarkedAsRead(notificationId)));
-                return;
-            }
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnNotificationMarkedAsRead(notificationId))); return; }
 
-            // ÇØ´ç Ä«µå Á¦°Å
             var card = pnlNotifications.Controls.OfType<Panel>().FirstOrDefault(p =>
             {
                 var t = p.Tag as Notification;
@@ -318,63 +284,27 @@ namespace XBit.Pages
             });
 
             if (card != null)
-            {
                 pnlNotifications.Controls.Remove(card);
-            }
 
-            // ¹èÁö °»½Å
-            var mainForm = FindForm() as MainForm;
-            mainForm?.UpdateNotificationBadge();
-
-            // ºó »óÅÂ Ç¥½Ã
             if (pnlNotifications.Controls.Count == 0)
-            {
-                var lblEmpty = new Label
-                {
-                    Text = "¾Ë¸²ÀÌ ¾ø½À´Ï´Ù.",
-                    Font = new Font("¸¼Àº °íµñ", 12f),
-                    ForeColor = Theme.FgMuted,
-                    AutoSize = true,
-                    Padding = new Padding(20)
-                };
-                pnlNotifications.Controls.Add(lblEmpty);
-            }
+                pnlNotifications.Controls.Add(MakeEmptyLabel());
+
+            (FindForm() as MainForm)?.UpdateNotificationBadge();
         }
 
         private void OnNotificationsAllMarkedAsRead(int userId)
         {
             if (AuthService.CurrentUser == null || userId != AuthService.CurrentUser.Id) return;
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnNotificationsAllMarkedAsRead(userId))); return; }
 
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(() => OnNotificationsAllMarkedAsRead(userId)));
-                return;
-            }
-
-            // ¸ðµç Ä«µå Á¦°Å(ÀÐÁö ¾Ê´ø Ç×¸ñ¸¸ ÀÖ´ø ÄÁÆ®·Ñ ±¸Á¶ÀÌ¹Ç·Î ÀüÃ¼ ÃÊ±âÈ­)
             pnlNotifications.Controls.Clear();
-
-            var lblEmpty = new Label
-            {
-                Text = "¾Ë¸²ÀÌ ¾ø½À´Ï´Ù.",
-                Font = new Font("¸¼Àº °íµñ", 12f),
-                ForeColor = Theme.FgMuted,
-                AutoSize = true,
-                Padding = new Padding(20)
-            };
-            pnlNotifications.Controls.Add(lblEmpty);
-
-            var mainForm = FindForm() as MainForm;
-            mainForm?.UpdateNotificationBadge();
+            pnlNotifications.Controls.Add(MakeEmptyLabel());
+            (FindForm() as MainForm)?.UpdateNotificationBadge();
         }
 
         private void OnNotificationDeleted(int notificationId)
         {
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(() => OnNotificationDeleted(notificationId)));
-                return;
-            }
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnNotificationDeleted(notificationId))); return; }
 
             var card = pnlNotifications.Controls.OfType<Panel>().FirstOrDefault(p =>
             {
@@ -382,10 +312,13 @@ namespace XBit.Pages
                 return t != null && t.Id == notificationId;
             });
 
-            if (card != null) pnlNotifications.Controls.Remove(card);
+            if (card != null)
+                pnlNotifications.Controls.Remove(card);
 
-            var mainForm = FindForm() as MainForm;
-            mainForm?.UpdateNotificationBadge();
+            if (pnlNotifications.Controls.Count == 0)
+                pnlNotifications.Controls.Add(MakeEmptyLabel());
+
+            (FindForm() as MainForm)?.UpdateNotificationBadge();
         }
     }
 }

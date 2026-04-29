@@ -1,129 +1,243 @@
-﻿// XBit/Pages/PageBoard.cs (최종 수정본 - 버튼 너비 수정 및 DataGrid 스타일 보정)
-
 using System;
 using System.Drawing;
 using System.Windows.Forms;
 using XBit.Services;
 using XBit.Models;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace XBit.Pages
 {
     public class PageBoard : UserControl
     {
-        private DataGridView grid;
-        private BoardService _boardService = new BoardService();
-        private Button btnNewPost;
+        private readonly BoardService _boardService = new BoardService();
+        private List<Post> _allPosts = new List<Post>();
+        private FlowLayoutPanel _postList;
+        private TextBox _txtSearch;
+        private string _searchQuery = "";
 
         public PageBoard()
         {
             Dock = DockStyle.Fill;
             BackColor = Theme.BgMain;
 
-            // 1. UI 컨트롤 초기화
-            btnNewPost = new Button
-            {
-                Text = "새 글 작성",
-                Height = 40,
-                Width = 120,
-                Margin = new Padding(10)
-            };
-            btnNewPost.Click += BtnNewPost_Click;
-
-            Theme.StylePrimaryButton(btnNewPost);
-
-            grid = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AutoGenerateColumns = false,
-                BorderStyle = BorderStyle.None,
-
-                AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
-                DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True }
-            };
-
-            // ⭐️ DataGridView 컬럼 설정 (댓글 수 컬럼 추가)
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "제목", DataPropertyName = "Title", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
-
-            // ⭐️ 댓글 수 컬럼 추가
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "댓글", DataPropertyName = "CommentCount", Width = 70, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter } });
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "작성자", DataPropertyName = "AuthorName", Width = 150 });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "작성일", DataPropertyName = "CreatedDate", Width = 150, DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm" } });
-
-            grid.CellDoubleClick += Grid_CellDoubleClick;
-
-            this.VisibleChanged += PageBoard_VisibleChanged;
-
-            // 2. TableLayoutPanel을 사용하여 레이아웃 재구성
-            var layoutPanel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 2,
-                Padding = new Padding(10)
-            };
-
-            layoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            layoutPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-            var pnlButtonContainer = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.RightToLeft,
-                Controls = { btnNewPost }
-            };
-
-            // 3. 컨트롤 배치
-            layoutPanel.Controls.Add(pnlButtonContainer, 0, 0);
-            layoutPanel.Controls.Add(grid, 0, 1);
-
-            this.Controls.Add(layoutPanel);
-
+            BuildLayout();
             LoadPosts();
+
+            this.VisibleChanged += (s, e) => { if (this.Visible) LoadPosts(); };
+            Theme.ThemeChanged += () => { BackColor = Theme.BgMain; Theme.Apply(this); RenderPosts(); };
         }
 
-        private void PageBoard_VisibleChanged(object sender, EventArgs e)
+        // ───────────────────────────────────────
+        // 레이아웃
+        // ───────────────────────────────────────
+        private void BuildLayout()
         {
-            if (this.Visible)
+            // ── 상단 바
+            var pnlTop = new Panel
             {
-                LoadPosts();
-            }
+                Dock = DockStyle.Top,
+                Height = 64,
+                BackColor = Theme.BgMain,
+                Padding = new Padding(20, 12, 20, 0)
+            };
+
+            var lblTitle = new Label
+            {
+                Text = "게시판",
+                Font = new Font("맑은 고딕", 16f, FontStyle.Bold),
+                ForeColor = Theme.FgDefault,
+                AutoSize = true,
+                Location = new Point(20, 16)
+            };
+
+            // 검색창
+            _txtSearch = new TextBox
+            {
+                Width = 220,
+                Height = 30,
+                Font = new Font("맑은 고딕", 10f),
+                BackColor = Theme.BgCard,
+                ForeColor = Theme.FgDefault,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            _txtSearch.SetPlaceholder("검색...");
+            _txtSearch.TextChanged += (s, e) =>
+            {
+                _searchQuery = _txtSearch.GetActualText();
+                RenderPosts();
+            };
+
+            var btnNew = new Button { Text = "새 글 작성", Width = 110, Height = 34 };
+            Theme.StylePrimaryButton(btnNew);
+            btnNew.Click += (s, e) => (FindForm() as MainForm)?.NavigateTo<PagePostDetail>(-1);
+
+            pnlTop.Controls.Add(lblTitle);
+            pnlTop.Controls.Add(_txtSearch);
+            pnlTop.Controls.Add(btnNew);
+
+            pnlTop.Resize += (s, e) =>
+            {
+                btnNew.Location = new Point(pnlTop.Width - btnNew.Width - 20, 15);
+                _txtSearch.Location = new Point(btnNew.Left - _txtSearch.Width - 10, 17);
+            };
+
+            // ── 구분선
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+
+            // ── 포스트 목록 (스크롤)
+            _postList = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(20, 12, 20, 20)
+            };
+            Theme.EnableDoubleBuffer(_postList);
+
+            Controls.Add(_postList);
+            Controls.Add(divider);
+            Controls.Add(pnlTop);
         }
 
+        // ───────────────────────────────────────
+        // 데이터 로드 & 렌더링
+        // ───────────────────────────────────────
         private void LoadPosts()
         {
-            var posts = _boardService.GetAllPosts();
-            grid.DataSource = posts;
-        }
-
-        private void BtnNewPost_Click(object sender, EventArgs e)
-        {
-            var mainForm = FindForm() as MainForm;
-            if (mainForm != null)
+            try
             {
-                mainForm.NavigateTo<PagePostDetail>(-1);
+                _allPosts = _boardService.GetAllPosts() ?? new List<Post>();
+                RenderPosts();
             }
+            catch { }
         }
 
-        private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        private void RenderPosts()
         {
-            if (e.RowIndex >= 0)
-            {
-                var selectedPost = grid.Rows[e.RowIndex].DataBoundItem as Post;
+            _postList.SuspendLayout();
+            _postList.Controls.Clear();
 
-                if (selectedPost != null)
+            var filtered = string.IsNullOrEmpty(_searchQuery)
+                ? _allPosts
+                : _allPosts.Where(p =>
+                    (p.Title ?? "").IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (p.AuthorName ?? "").IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0
+                  ).ToList();
+
+            if (filtered.Count == 0)
+            {
+                _postList.Controls.Add(new Label
                 {
-                    var mainForm = FindForm() as MainForm;
-                    if (mainForm != null)
-                    {
-                        mainForm.NavigateTo<PagePostDetail>(selectedPost.Id);
-                    }
-                }
+                    Text = "게시글이 없습니다.",
+                    Font = new Font("맑은 고딕", 11f),
+                    ForeColor = Theme.FgMuted,
+                    AutoSize = true,
+                    Padding = new Padding(0, 20, 0, 0)
+                });
             }
+            else
+            {
+                foreach (var post in filtered.OrderByDescending(p => p.CreatedDate))
+                    _postList.Controls.Add(MakePostCard(post));
+            }
+
+            _postList.ResumeLayout();
+        }
+
+        // ───────────────────────────────────────
+        // 포스트 카드
+        // ───────────────────────────────────────
+        private Panel MakePostCard(Post post)
+        {
+            var card = new Panel
+            {
+                BackColor = Theme.BgCard,
+                Margin = new Padding(0, 0, 0, 10),
+                Padding = new Padding(20, 14, 20, 14),
+                Cursor = Cursors.Hand,
+                Tag = post
+            };
+            card.Width = _postList.ClientSize.Width - 40;
+            Theme.StyleCard(card);
+
+            // 제목
+            var lblTitle = new Label
+            {
+                Text = post.Title,
+                Font = new Font("맑은 고딕", 12f, FontStyle.Bold),
+                ForeColor = Theme.FgDefault,
+                AutoSize = true,
+                Location = new Point(0, 0),
+                MaximumSize = new Size(card.Width - 160, 0)
+            };
+
+            // 내용 미리보기
+            string preview = (post.Content ?? "").Replace("\r", "").Replace("\n", " ");
+            if (preview.Length > 120) preview = preview.Substring(0, 120) + "...";
+            var lblPreview = new Label
+            {
+                Text = preview,
+                Font = new Font("맑은 고딕", 9.5f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = false,
+                Width = card.Width - 40,
+                Height = 38,
+                Location = new Point(0, 28),
+                Tag = "muted"
+            };
+
+            // 하단 메타
+            var pnlMeta = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Location = new Point(0, 72),
+                Padding = new Padding(0)
+            };
+
+            pnlMeta.Controls.Add(MakeMetaChip("✍ " + (post.AuthorName ?? "익명"), Theme.FgMuted));
+            pnlMeta.Controls.Add(MakeMetaChip("🕐 " + post.CreatedDate.ToString("MM/dd HH:mm"), Theme.FgMuted));
+            if (post.CommentCount > 0)
+                pnlMeta.Controls.Add(MakeMetaChip($"💬 {post.CommentCount}", Theme.Primary));
+
+            card.Height = 108;
+            card.Controls.Add(lblTitle);
+            card.Controls.Add(lblPreview);
+            card.Controls.Add(pnlMeta);
+
+            // 호버 효과 + 클릭
+            EventHandler click = (s, e) => (FindForm() as MainForm)?.NavigateTo<PagePostDetail>(post.Id);
+            card.Click += click;
+            foreach (Control c in card.Controls) { c.Click += click; c.Cursor = Cursors.Hand; }
+
+            card.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
+            card.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
+
+            // 카드 너비 반응형
+            _postList.Resize += (s, e) =>
+            {
+                int w = _postList.ClientSize.Width - 40;
+                card.Width = w;
+                lblPreview.Width = w - 40;
+                lblTitle.MaximumSize = new Size(w - 160, 0);
+            };
+
+            return card;
+        }
+
+        private Label MakeMetaChip(string text, Color color)
+        {
+            return new Label
+            {
+                Text = text,
+                Font = new Font("맑은 고딕", 8.5f),
+                ForeColor = color,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 14, 0),
+                Tag = "no-theme"
+            };
         }
     }
 }

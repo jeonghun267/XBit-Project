@@ -1,5 +1,3 @@
-﻿// XBit/Pages/PageAssignments.cs (수정: 프로젝트 추가 시 알림 생성)
-
 using System;
 using System.Drawing;
 using System.Windows.Forms;
@@ -13,310 +11,353 @@ namespace XBit.Pages
 {
     public class PageAssignments : UserControl
     {
-        private DataGridView grid;
-        private AssignmentService _assignmentService = new AssignmentService();
-        private List<Assignment> allAssignments;
-
-        // UI controls
-        private Button btnAddAssignment;
-        private Button btnRefresh;
-        private TextBox txtSearch;
-
-        // 현재 필터 상태(문자열 기반)
-        private string currentFilter = "ALL";
+        private readonly AssignmentService _assignmentService = new AssignmentService();
+        private List<Assignment> _allAssignments = new List<Assignment>();
+        private FlowLayoutPanel _cardList;
+        private TextBox _txtSearch;
+        private string _searchQuery = "";
+        private string _currentFilter = "ALL";
+        private Panel _filterBar;
 
         public PageAssignments()
         {
             Dock = DockStyle.Fill;
             BackColor = Theme.BgMain;
-
-            LoadAllAssignments();
-            InitializeLayout();
-            FilterData("ALL");
+            BuildLayout();
+            LoadAssignments();
+            this.VisibleChanged += (s, e) => { if (this.Visible) LoadAssignments(); };
+            Theme.ThemeChanged += () =>
+            {
+                BackColor = Theme.BgMain;
+                Theme.Apply(this);
+                RefreshFilterTabs();
+                RenderCards();
+            };
         }
 
-        private void InitializeLayout()
+        private void BuildLayout()
         {
-            // Header & controls
+            // ── Header
             var pnlHeader = new Panel
             {
                 Dock = DockStyle.Top,
                 Height = 64,
-                BackColor = Theme.BgMain,
-                Padding = new Padding(12)
+                BackColor = Theme.BgMain
             };
-
             var lblTitle = new Label
             {
-                Text = "[프로젝트 목록]",
+                Text = "프로젝트",
                 Font = new Font("맑은 고딕", 16f, FontStyle.Bold),
                 ForeColor = Theme.FgDefault,
                 AutoSize = true,
-                Location = new Point(12, 16)
+                Location = new Point(20, 16)
             };
-
-            // Search box (✅ 위치 왼쪽으로 이동: 250px)
-            txtSearch = new TextBox
-            {   
-                Width = 220,
-                Height = 24,
-                Location = new Point(250, 20),
+            _txtSearch = new TextBox
+            {
+                Width = 200,
+                Height = 30,
+                Font = new Font("맑은 고딕", 10f),
                 BackColor = Theme.BgCard,
-                ForeColor = Theme.FgDefault
+                ForeColor = Theme.FgDefault,
+                BorderStyle = BorderStyle.FixedSingle
             };
-            txtSearch.SetPlaceholder("검색: 제목");
-            txtSearch.TextChanged += (s, e) => ApplySearch();
+            _txtSearch.SetPlaceholder("검색...");
+            _txtSearch.TextChanged += (s, e) => { _searchQuery = _txtSearch.GetActualText(); RenderCards(); };
 
-            // 새로고침 버튼 (✅ 위치 조정: 480px)
-            btnRefresh = new Button
-            {
-                Text = "새로고침",
-                Width = 90,
-                Height = 36,
-                Location = new Point(480, 14)
-            };
-            Theme.StyleButton(btnRefresh);
-            btnRefresh.Click += (s, e) => { LoadAllAssignments(); FilterData(currentFilter); };
-
-            // 추가 버튼
-            btnAddAssignment = new Button
-            {
-                Text = "+ 프로젝트 생성",
-                Width = 140,
-                Height = 36,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
-            };
-            Theme.StylePrimaryButton(btnAddAssignment);
-            btnAddAssignment.Click += BtnAddAssignment_Click;
-
-            // 위치 계산 on resize (✅ 동적 배치 개선)
-            pnlHeader.Resize += (s, e) =>
-            {
-                btnAddAssignment.Location = new Point(pnlHeader.Width - btnAddAssignment.Width - 12, 14);
-                btnRefresh.Location = new Point(pnlHeader.Width - btnAddAssignment.Width - btnRefresh.Width - 24, 14);
-                txtSearch.Location = new Point(pnlHeader.Width - btnAddAssignment.Width - btnRefresh.Width - txtSearch.Width - 50, 20);
-            };
+            var btnAdd = new Button { Text = "+ 프로젝트 생성", Width = 130, Height = 34 };
+            Theme.StylePrimaryButton(btnAdd);
+            btnAdd.Click += BtnAdd_Click;
 
             pnlHeader.Controls.Add(lblTitle);
-            pnlHeader.Controls.Add(txtSearch);
-            pnlHeader.Controls.Add(btnRefresh);
-            pnlHeader.Controls.Add(btnAddAssignment);
+            pnlHeader.Controls.Add(_txtSearch);
+            pnlHeader.Controls.Add(btnAdd);
+            pnlHeader.Resize += (s, e) =>
+            {
+                btnAdd.Location = new Point(pnlHeader.Width - btnAdd.Width - 20, 15);
+                _txtSearch.Location = new Point(btnAdd.Left - _txtSearch.Width - 10, 17);
+            };
 
-            // Grid
-            InitializeGrid();
+            // ── Filter tab bar
+            _filterBar = new Panel { Dock = DockStyle.Top, Height = 46, BackColor = Theme.BgMain };
+            var filters = new[] { ("전체", "ALL"), ("진행중", "IN_PROGRESS"), ("완료", "COMPLETED"), ("마감임박", "DUE_SOON") };
+            int fx = 20;
+            foreach (var (lbl, key) in filters)
+            {
+                var k = key;
+                var btn = new Button
+                {
+                    Text = lbl,
+                    Width = 82,
+                    Height = 30,
+                    Location = new Point(fx, 8),
+                    Tag = "filter-" + k,
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("맑은 고딕", 9.5f),
+                    Cursor = Cursors.Hand
+                };
+                ApplyTabStyle(btn, k == _currentFilter);
+                btn.Click += (s, e) => { _currentFilter = k; RefreshFilterTabs(); RenderCards(); };
+                _filterBar.Controls.Add(btn);
+                fx += 90;
+            }
 
-            Controls.Add(grid);
+            // ── Divider + card list
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+            _cardList = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(20, 12, 20, 20)
+            };
+            Theme.EnableDoubleBuffer(_cardList);
+
+            Controls.Add(_cardList);
+            Controls.Add(divider);
+            Controls.Add(_filterBar);
             Controls.Add(pnlHeader);
         }
 
-        private void InitializeGrid()
+        private void ApplyTabStyle(Button btn, bool active)
         {
-            grid = new DataGridView
+            btn.FlatAppearance.BorderSize = 1;
+            if (active)
             {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AutoGenerateColumns = false,
-                BackgroundColor = Theme.BgMain,
-                BorderStyle = BorderStyle.None,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                RowTemplate = { Height = 40 }
-            };
-
-            grid.Columns.Clear();
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn
+                btn.BackColor = Theme.Primary;
+                btn.ForeColor = Color.White;
+                btn.FlatAppearance.BorderColor = Theme.Primary;
+            }
+            else
             {
-                HeaderText = "과목",
-                DataPropertyName = "Course",
-                Width = 160
-            });
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                HeaderText = "제목",
-                DataPropertyName = "Title",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            });
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                HeaderText = "마감일",
-                DataPropertyName = "DueDate",
-                Width = 150,
-                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm" }
-            });
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                HeaderText = "상태",
-                DataPropertyName = "Status",
-                Width = 100
-            });
-
-            grid.CellDoubleClick += Grid_CellDoubleClick;
-            grid.CellFormatting += Grid_CellFormatting;
-        }
-
-        private void Grid_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
-        {
-            if (grid.Columns[e.ColumnIndex].HeaderText == "상태")
-            {
-                string status = e.Value?.ToString();
-                if (status == "미제출")
-                {
-                    e.CellStyle.ForeColor = Color.FromArgb(244, 67, 54);
-                    e.CellStyle.Font = new Font(grid.Font, FontStyle.Bold);
-                }
-                else if (status == "제출" || status == "제출 완료")
-                {
-                    e.CellStyle.ForeColor = Color.FromArgb(76, 175, 80);
-                }
-                else
-                {
-                    e.CellStyle.ForeColor = Theme.FgDefault;
-                }
+                btn.BackColor = Theme.BgCard;
+                btn.ForeColor = Theme.FgMuted;
+                btn.FlatAppearance.BorderColor = Theme.Border;
             }
         }
 
-        private void LoadAllAssignments()
+        private void RefreshFilterTabs()
         {
-            System.Diagnostics.Debug.WriteLine($"[PageAssignments] 현재 사용자 ID: {AuthService.CurrentUser.Id}");
-
-            allAssignments = _assignment_service_safe();
-            System.Diagnostics.Debug.WriteLine($"[PageAssignments] 가져온 프로젝트 수: {allAssignments?.Count ?? 0}");
+            foreach (Control c in _filterBar.Controls)
+                if (c is Button b && (b.Tag as string ?? "").StartsWith("filter-"))
+                    ApplyTabStyle(b, b.Tag.ToString().Substring(7) == _currentFilter);
         }
 
-        // 안전하게 서비스 호출 (예외 방지/로그)
-        private List<Assignment> _assignment_service_safe()
+        private void LoadAssignments()
         {
             try
             {
-                return _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id) ?? new List<Assignment>();
+                _allAssignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id) ?? new List<Assignment>();
+                RenderCards();
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[PageAssignments] GetAssignmentsForUser 예외: {ex.Message}");
-                return new List<Assignment>();
-            }
+            catch { }
         }
 
-        public void FilterData(string filter)
+        private void RenderCards()
         {
-            currentFilter = filter ?? "ALL";
+            _cardList.SuspendLayout();
+            _cardList.Controls.Clear();
 
-            if (allAssignments == null) LoadAllAssignments();
-
-            IEnumerable<Assignment> filteredList = allAssignments;
-            DateTime now = DateTime.Now;
-
-            System.Diagnostics.Debug.WriteLine($"[PageAssignments] FilterData 호출: {filter}");
-
-            switch (filter)
+            var filtered = ApplyFilters().ToList();
+            if (filtered.Count == 0)
             {
-                case "DueToday":
-                case "DUE_SOON":
-                    filteredList = allAssignments.Where(a =>
-                        (a.DueDate - now).TotalHours <= 24 &&
-                        (a.DueDate - now).TotalHours > 0 &&
-                        a.Status != "제출 완료"
-                    );
-                    break;
-
-                case "DueThisWeek":
-                case "WEEKLY":
-                    DateTime startOfWeek = now.Date.AddDays(-(int)now.DayOfWeek);
-                    DateTime endOfWeek = startOfWeek.AddDays(7);
-                    filteredList = allAssignments.Where(a => a.DueDate >= startOfWeek && a.DueDate < endOfWeek);
-                    break;
-
-                case "ALL":
-                default:
-                    filteredList = allAssignments;
-                    break;
-            }
-
-            // 검색 텍스트 적용
-            var q = txtSearch.GetActualText();
-            if (!string.IsNullOrEmpty(q))
-            {
-                filteredList = filteredList.Where(a => (a.Title ?? "").IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
-            }
-
-            grid.DataSource = filteredList.ToList();
-            grid.Refresh();
-        }
-
-        private void ApplySearch()
-        {
-            // 실시간 검색: 현재 필터 유지
-            FilterData(currentFilter);
-        }
-
-        private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.RowIndex >= 0)
-            {
-                var selectedAssignment = grid.Rows[e.RowIndex].DataBoundItem as Assignment;
-
-                if (selectedAssignment != null)
+                _cardList.Controls.Add(new Label
                 {
-                    var mainForm = FindForm() as MainForm;
-                    mainForm?.NavigateTo<PageAssignmentDetail>(selectedAssignment.Id);
-                }
+                    Text = "해당하는 프로젝트가 없습니다.",
+                    Font = new Font("맑은 고딕", 11f),
+                    ForeColor = Theme.FgMuted,
+                    AutoSize = true,
+                    Padding = new Padding(0, 20, 0, 0)
+                });
             }
+            else
+            {
+                foreach (var a in filtered)
+                    _cardList.Controls.Add(MakeCard(a));
+            }
+            _cardList.ResumeLayout();
         }
 
-        private void BtnAddAssignment_Click(object sender, EventArgs e)
+        private IEnumerable<Assignment> ApplyFilters()
+        {
+            var now = DateTime.Now;
+            IEnumerable<Assignment> list = _allAssignments;
+
+            switch (_currentFilter)
+            {
+                case "IN_PROGRESS":
+                    list = list.Where(a => a.Status != "제출 완료" && a.DueDate > now);
+                    break;
+                case "COMPLETED":
+                    list = list.Where(a => a.Status == "제출 완료");
+                    break;
+                case "DUE_SOON":
+                    list = list.Where(a => a.Status != "제출 완료" && (a.DueDate - now).TotalHours <= 48 && a.DueDate > now);
+                    break;
+            }
+
+            if (!string.IsNullOrEmpty(_searchQuery))
+                list = list.Where(a =>
+                    (a.Title ?? "").IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (a.Course ?? "").IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            return list.OrderBy(a => a.DueDate);
+        }
+
+        private Panel MakeCard(Assignment a)
+        {
+            var now = DateTime.Now;
+            var remaining = a.DueDate - now;
+            bool isOverdue = remaining.TotalHours < 0;
+            bool isDueSoon = !isOverdue && remaining.TotalHours <= 24;
+            bool isDone = a.Status == "제출 완료";
+
+            var card = new Panel
+            {
+                BackColor = Theme.BgCard,
+                Margin = new Padding(0, 0, 0, 10),
+                Padding = new Padding(20, 14, 20, 14),
+                Cursor = Cursors.Hand,
+                Tag = a
+            };
+            card.Width = _cardList.ClientSize.Width - 40;
+            Theme.StyleCard(card);
+
+            // Course badge (top-left)
+            var courseBadge = new Label
+            {
+                Text = a.Course ?? "과목",
+                Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
+                ForeColor = Theme.Primary,
+                AutoSize = true,
+                Location = new Point(0, 0),
+                Tag = "no-theme"
+            };
+
+            // Title
+            var lblTitle = new Label
+            {
+                Text = a.Title,
+                Font = new Font("맑은 고딕", 12f, FontStyle.Bold),
+                ForeColor = Theme.FgDefault,
+                AutoSize = true,
+                Location = new Point(0, 20),
+                MaximumSize = new Size(card.Width - 120, 0)
+            };
+
+            // Status badge (top-right)
+            Color statusBg = isDone ? Theme.Success
+                           : isDueSoon ? Color.FromArgb(255, 152, 0)
+                           : isOverdue ? Color.FromArgb(244, 67, 54)
+                           : Color.FromArgb(90, 90, 105);
+            string statusText = isDone ? "제출완료" : isOverdue ? "기한만료" : a.Status ?? "미제출";
+
+            var lblStatus = new Label
+            {
+                Text = statusText,
+                Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = statusBg,
+                AutoSize = false,
+                Width = 70,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Tag = "no-theme"
+            };
+
+            // Due date + remaining chips
+            string remText = isOverdue ? "마감됨"
+                           : remaining.TotalHours < 24 ? $"⚡ {(int)remaining.TotalHours}h {remaining.Minutes}m 남음"
+                           : $"📅 {(int)remaining.TotalDays}일 {remaining.Hours}h 남음";
+            Color remColor = isOverdue ? Color.FromArgb(244, 67, 54)
+                           : isDueSoon ? Color.FromArgb(255, 152, 0)
+                           : Theme.FgMuted;
+
+            var pnlMeta = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Location = new Point(0, 50),
+                Padding = new Padding(0)
+            };
+            pnlMeta.Controls.Add(MakeChip("🗓 " + a.DueDate.ToString("MM/dd HH:mm"), Theme.FgMuted));
+            var remChip = MakeChip(remText, remColor);
+            remChip.Tag = "no-theme";
+            pnlMeta.Controls.Add(remChip);
+
+            card.Height = 88;
+            card.Controls.Add(courseBadge);
+            card.Controls.Add(lblTitle);
+            card.Controls.Add(pnlMeta);
+            card.Controls.Add(lblStatus);
+
+            // Position status badge top-right
+            void PlaceBadge() => lblStatus.Location = new Point(card.Width - lblStatus.Width - 40, 16);
+            PlaceBadge();
+            card.Resize += (s, e) => { PlaceBadge(); lblTitle.MaximumSize = new Size(card.Width - 120, 0); };
+
+            EventHandler click = (s, e) => (FindForm() as MainForm)?.NavigateTo<PageAssignmentDetail>(a.Id);
+            card.Click += click;
+            foreach (Control c in card.Controls) { c.Click += click; c.Cursor = Cursors.Hand; }
+
+            card.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
+            card.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
+
+            _cardList.Resize += (s, e) => card.Width = _cardList.ClientSize.Width - 40;
+
+            return card;
+        }
+
+        private Label MakeChip(string text, Color color) => new Label
+        {
+            Text = text,
+            Font = new Font("맑은 고딕", 8.5f),
+            ForeColor = color,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 12, 0)
+        };
+
+        private void BtnAdd_Click(object sender, EventArgs e)
         {
             using (var dialog = new AssignmentAddDialog())
             {
-                if (dialog.ShowDialog() == DialogResult.OK)
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                bool success = _assignmentService.AddAssignment(dialog.Course, dialog.Title, dialog.DueDate, AuthService.CurrentUser.Id);
+                if (success)
                 {
-                    bool success = _assignmentService.AddAssignment(
-                        dialog.Course,
-                        dialog.Title,
-                        dialog.DueDate,
-                        AuthService.CurrentUser.Id
-                    );
-
-                    if (success)
+                    try
                     {
-                        MessageBox.Show("프로젝트가 추가되었습니다!", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        LoadAllAssignments();
-                        FilterData("ALL");
-
-                        try
-                        {
-                            // 프로젝트 추가 알림: 작성자 본인(또는 필요시 팀원에게도 보낼 수 있음)
-                            var senderName = AuthService.CurrentUser != null
-                                ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
-                                : "시스템";
-
-                            NotificationService.Create(
-                                AuthService.CurrentUser.Id,
-                                "새 프로젝트가 생성되었습니다",
-                                $"{senderName}님이 '{dialog.Title}' 프로젝트를 추가했습니다.",
-                                "Assignment",
-                                null
-                            );
-                        }
-                        catch
-                        {
-                            // 무시
-                        }
+                        var user = AuthService.CurrentUser;
+                        var name = user != null && !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user?.Username ?? "시스템";
+                        NotificationService.Create(user.Id, "새 프로젝트가 생성되었습니다",
+                            $"{name}님이 '{dialog.Title}' 프로젝트를 추가했습니다.", "Assignment", null);
                     }
-                    else
-                    {
-                        MessageBox.Show("프로젝트 추가 실패!", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
+                    catch { }
+                    LoadAssignments();
+                }
+                else
+                {
+                    MessageBox.Show("프로젝트 추가 실패!", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
+
+        // Kept for external callers (MainForm/PageHome quick filter shortcuts)
+        public void FilterData(string filter)
+        {
+            switch (filter)
+            {
+                case "DueToday": case "DUE_SOON": _currentFilter = "DUE_SOON"; break;
+                case "DueThisWeek": case "WEEKLY": _currentFilter = "IN_PROGRESS"; break;
+                case "COMPLETED": _currentFilter = "COMPLETED"; break;
+                default: _currentFilter = "ALL"; break;
+            }
+            RefreshFilterTabs();
+            if (_allAssignments == null) LoadAssignments(); else RenderCards();
+        }
     }
 
-    // ✅ 개선된 PlaceholderText 확장 (겹침 문제 해결)
+    // ── Placeholder TextBox extensions (used across pages) ───────────────────
     static class TextBoxExtensions
     {
         private const string PlaceholderKey = "_placeholder";
@@ -325,17 +366,13 @@ namespace XBit.Pages
         public static void SetPlaceholder(this TextBox tb, string placeholder)
         {
             if (tb == null) return;
-
-            // Tag에 placeholder 저장
             tb.Tag = new Dictionary<string, object>
             {
                 { PlaceholderKey, placeholder },
                 { IsPlaceholderKey, true }
             };
-
             tb.Text = placeholder;
             tb.ForeColor = SystemColors.GrayText;
-
             tb.GotFocus -= OnGotFocus;
             tb.LostFocus -= OnLostFocus;
             tb.GotFocus += OnGotFocus;
@@ -345,13 +382,9 @@ namespace XBit.Pages
         public static string GetActualText(this TextBox tb)
         {
             if (tb == null) return "";
-            
             var dict = tb.Tag as Dictionary<string, object>;
             if (dict != null && dict.ContainsKey(IsPlaceholderKey) && (bool)dict[IsPlaceholderKey])
-            {
                 return "";
-            }
-            
             return tb.Text?.Trim() ?? "";
         }
 
@@ -359,7 +392,6 @@ namespace XBit.Pages
         {
             var tb = sender as TextBox;
             if (tb == null) return;
-
             var dict = tb.Tag as Dictionary<string, object>;
             if (dict != null && dict.ContainsKey(IsPlaceholderKey) && (bool)dict[IsPlaceholderKey])
             {
@@ -373,7 +405,6 @@ namespace XBit.Pages
         {
             var tb = sender as TextBox;
             if (tb == null) return;
-
             var dict = tb.Tag as Dictionary<string, object>;
             if (dict != null && string.IsNullOrWhiteSpace(tb.Text))
             {
@@ -385,10 +416,13 @@ namespace XBit.Pages
     }
 }
 
-// Dialogs/AssignmentAddDialog.cs (프로젝트 상세 및 추가 대화 상자 개선)
-
+// ── AssignmentAddDialog ───────────────────────────────────────────────────────
 namespace XBit.Dialogs
 {
+    using System;
+    using System.Drawing;
+    using System.Windows.Forms;
+
     public class AssignmentAddDialog : Form
     {
         private TextBox txtCourse;
@@ -403,129 +437,76 @@ namespace XBit.Dialogs
 
         public AssignmentAddDialog()
         {
-            InitializeComponent();
-        }
-
-        private void InitializeComponent()
-        {
             this.Text = "프로젝트 추가";
-            this.Size = new Size(450, 280);
+            this.Size = new Size(460, 290);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.BackColor = Color.White;
+            this.BackColor = Theme.BgMain;
 
-            // Course Label
-            var lblCourse = new Label
-            {
-                Text = "과목:",
-                Location = new Point(20, 20),
-                AutoSize = true,
-                Font = new Font("맑은 고딕", 9f)
-            };
+            var lblCourse = MakeLabel("과목", 20);
+            txtCourse = MakeTextBox(45);
 
-            txtCourse = new TextBox
-            {
-                Location = new Point(20, 45),
-                Width = 390,
-                Font = new Font("맑은 고딕", 10f)
-            };
+            var lblTitle = MakeLabel("제목", 85);
+            txtTitle = MakeTextBox(110);
 
-            // Title Label
-            var lblTitle = new Label
-            {
-                Text = "제목:",
-                Location = new Point(20, 80),
-                AutoSize = true,
-                Font = new Font("맑은 고딕", 9f)
-            };
-
-            txtTitle = new TextBox
-            {
-                Location = new Point(20, 105),
-                Width = 390,
-                Font = new Font("맑은 고딕", 10f)
-            };
-
-            // DueDate Label
-            var lblDueDate = new Label
-            {
-                Text = "마감일:",
-                Location = new Point(20, 140),
-                AutoSize = true,
-                Font = new Font("맑은 고딕", 9f)
-            };
-
+            var lblDueDate = MakeLabel("마감일", 148);
             dtpDueDate = new DateTimePicker
             {
-                Location = new Point(20, 165),
-                Width = 390,
+                Location = new Point(20, 170),
+                Width = 400,
                 Format = DateTimePickerFormat.Custom,
                 CustomFormat = "yyyy-MM-dd HH:mm",
                 ShowUpDown = false,
-                Value = DateTime.Now.AddDays(7)
+                Value = DateTime.Now.AddDays(7),
+                BackColor = Theme.BgCard,
+                ForeColor = Theme.FgDefault
             };
 
-            // OK Button
-            btnOk = new Button
+            btnOk = new Button { Text = "확인", Location = new Point(230, 215), Width = 90, Height = 32, DialogResult = DialogResult.OK };
+            btnCancel = new Button { Text = "취소", Location = new Point(330, 215), Width = 90, Height = 32, DialogResult = DialogResult.Cancel };
+
+            Theme.StylePrimaryButton(btnOk);
+            Theme.StyleButton(btnCancel);
+
+            btnOk.Click += (s, e) =>
             {
-                Text = "확인",
-                Location = new Point(230, 205),
-                Width = 90,
-                Height = 32,
-                DialogResult = DialogResult.OK
-            };
-            btnOk.Click += BtnOk_Click;
-
-            // Cancel Button
-            btnCancel = new Button
-            {
-                Text = "취소",
-                Location = new Point(330, 205),
-                Width = 90,
-                Height = 32,
-                DialogResult = DialogResult.Cancel
+                if (string.IsNullOrWhiteSpace(txtCourse.Text)) { Warn("과목을 입력하세요.", txtCourse); return; }
+                if (string.IsNullOrWhiteSpace(txtTitle.Text)) { Warn("제목을 입력하세요.", txtTitle); return; }
+                if (dtpDueDate.Value <= DateTime.Now) { Warn("마감일은 현재 시간 이후여야 합니다.", dtpDueDate); return; }
             };
 
-            this.Controls.Add(lblCourse);
-            this.Controls.Add(txtCourse);
-            this.Controls.Add(lblTitle);
-            this.Controls.Add(txtTitle);
-            this.Controls.Add(lblDueDate);
-            this.Controls.Add(dtpDueDate);
-            this.Controls.Add(btnOk);
-            this.Controls.Add(btnCancel);
-
+            this.Controls.AddRange(new Control[] { lblCourse, txtCourse, lblTitle, txtTitle, lblDueDate, dtpDueDate, btnOk, btnCancel });
             this.AcceptButton = btnOk;
             this.CancelButton = btnCancel;
         }
 
-        private void BtnOk_Click(object sender, EventArgs e)
+        private Label MakeLabel(string text, int y) => new Label
         {
-            if (string.IsNullOrWhiteSpace(txtCourse.Text))
-            {
-                MessageBox.Show("과목을 입력하세요.", "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                txtCourse.Focus();
-                this.DialogResult = DialogResult.None;
-                return;
-            }
+            Text = text,
+            Location = new Point(20, y),
+            AutoSize = true,
+            Font = new Font("맑은 고딕", 9f),
+            ForeColor = Theme.FgMuted,
+            BackColor = System.Drawing.Color.Transparent
+        };
 
-            if (string.IsNullOrWhiteSpace(txtTitle.Text))
-            {
-                MessageBox.Show("제목을 입력하세요.", "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                txtTitle.Focus();
-                this.DialogResult = DialogResult.None;
-                return;
-            }
+        private TextBox MakeTextBox(int y) => new TextBox
+        {
+            Location = new Point(20, y),
+            Width = 400,
+            Font = new Font("맑은 고딕", 10f),
+            BackColor = Theme.BgCard,
+            ForeColor = Theme.FgDefault,
+            BorderStyle = BorderStyle.FixedSingle
+        };
 
-            if (dtpDueDate.Value <= DateTime.Now)
-            {
-                MessageBox.Show("마감일은 현재 시간 이후여야 합니다.", "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                dtpDueDate.Focus();
-                this.DialogResult = DialogResult.None;
-                return;
-            }
+        private void Warn(string msg, Control focus)
+        {
+            MessageBox.Show(msg, "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            focus.Focus();
+            this.DialogResult = DialogResult.None;
         }
     }
 }

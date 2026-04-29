@@ -45,15 +45,12 @@ namespace XBit.Pages
             InitializeUIControls();
 
             if (postId != -1)
-            {
                 LoadPost(postId);
-            }
             else
-            {
                 InitializeNewPostMode();
-            }
 
             Theme.Apply(this);
+            Theme.ThemeChanged += () => { BackColor = Theme.BgMain; Theme.Apply(this); };
         }
 
         public PagePostDetail() : this(-1) { }
@@ -88,12 +85,23 @@ namespace XBit.Pages
 
         private void InitializeUIControls()
         {
+            // ── 상단 바 (뒤로가기)
+            var pnlTop = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Theme.BgMain };
+            var btnBack = new Button { Text = "← 뒤로", Width = 80, Height = 30, Location = new Point(16, 9), FlatStyle = FlatStyle.Flat, Font = new Font("맑은 고딕", 9.5f), Cursor = Cursors.Hand };
+            Theme.StyleButton(btnBack);
+            btnBack.Click += (s, e) => ReturnToBoardList();
+            var divTop = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+            pnlTop.Controls.Add(btnBack);
+            this.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border });
+            this.Controls.Add(pnlTop);
+
+            // ── 스크롤 가능 컨텐츠
             var layoutPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
                 AutoScroll = true,
-                Padding = new Padding(20)
+                Padding = new Padding(24, 16, 24, 24)
             };
 
             // ✅ 모드 표시 라벨
@@ -241,6 +249,8 @@ namespace XBit.Pages
                 Margin = new Padding(0, 0, 0, 10)
             };
 
+            var commentInputPanel = CreateCommentInputPanel();
+
             layoutPanel.Controls.AddRange(new Control[] {
                 lblModeIndicator,
                 pnlTitleHeader,
@@ -250,10 +260,25 @@ namespace XBit.Pages
                 pnlButtons,
                 lblSaveStatus,
                 lblCommentTitle,
-                CreateCommentInputPanel(),
+                commentInputPanel,
                 pnlComments
             });
             this.Controls.Add(layoutPanel);
+
+            // 반응형: layoutPanel 너비 변경 시 내부 컨트롤 너비 조정
+            layoutPanel.Resize += (s, e) =>
+            {
+                int w = Math.Max(300, layoutPanel.ClientSize.Width - 48);
+                txtTitle.Width = w;
+                txtContent.Width = w;
+                pnlTitleHeader.Width = w;
+                pnlContentHeader.Width = w;
+                pnlButtons.Width = w;
+                pnlComments.Width = w;
+                commentInputPanel.Width = w;
+                foreach (Control c in pnlComments.Controls)
+                    c.Width = w;
+            };
         }
 
         // ✅ 제목 글자 수 업데이트
@@ -322,39 +347,44 @@ namespace XBit.Pages
 
         private Control CreateCommentInputPanel()
         {
-            // 입력창 더 길게: 높이 증가
             var pnlInput = new Panel
             {
                 Width = ContentWidth,
-                Height = 180,
+                Height = 110,
                 Margin = new Padding(0, 5, 0, 10)
             };
 
             txtCommentInput = new TextBox
             {
-                Dock = DockStyle.Fill,
                 Multiline = true,
-                Height = 170,
+                Location = new Point(0, 0),
+                Height = 72,
                 BackColor = Theme.BgCard,
                 ForeColor = Theme.FgDefault,
                 TabStop = true,
-                Font = new Font("Segoe UI", 10f)
+                Font = new Font("Segoe UI", 10f),
+                ScrollBars = ScrollBars.Vertical,
+                BorderStyle = BorderStyle.FixedSingle
             };
 
             btnAddComment = new Button
             {
-                Text = "등록",
-                Dock = DockStyle.Right,
-                Width = 110,
-                Height = 170
+                Text = "댓글 등록",
+                Height = 34,
+                Location = new Point(0, 76),
+                Width = 100
             };
             Theme.StylePrimaryButton(btnAddComment);
-
             btnAddComment.Click += BtnAddComment_Click;
 
-            pnlInput.Controls.Add(btnAddComment);
             pnlInput.Controls.Add(txtCommentInput);
-            pnlInput.Controls.SetChildIndex(txtCommentInput, 0);
+            pnlInput.Controls.Add(btnAddComment);
+
+            pnlInput.Resize += (s, e) =>
+            {
+                txtCommentInput.Width = pnlInput.Width;
+                btnAddComment.Location = new Point(pnlInput.Width - btnAddComment.Width, 76);
+            };
 
             return pnlInput;
         }
@@ -397,8 +427,9 @@ namespace XBit.Pages
                     txtContent.ReadOnly = true;
                     btnSave.Visible = false;
                     btnDelete.Visible = false;
+                    btnCancel.Text = "목록으로";
                     lblModeIndicator.Text = "🔒 읽기 전용";
-                    lblModeIndicator.ForeColor = Color.FromArgb(244, 67, 54);
+                    lblModeIndicator.ForeColor = Theme.FgMuted;
                 }
                 else
                 {

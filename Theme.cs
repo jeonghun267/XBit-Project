@@ -77,6 +77,7 @@ namespace XBit
             b.ForeColor = FgPrimary;
             b.FlatAppearance.MouseOverBackColor = Hover;
             b.Dock = DockStyle.Top;
+            b.Tag = "btn-nav";
         }
 
         public static void StyleDanger(Button b)
@@ -86,6 +87,7 @@ namespace XBit
             b.BackColor = Current == AppTheme.Dark ? Color.FromArgb(120, 30, 30) : Color.FromArgb(255, 235, 235);
             b.ForeColor = Current == AppTheme.Dark ? Color.White : Color.FromArgb(180, 0, 0);
             b.Height = 36;
+            b.Tag = "btn-danger";
         }
 
         public static void StyleButton(Button b)
@@ -98,6 +100,7 @@ namespace XBit
             b.Font = new Font("Segoe UI", 9f);
             b.Height = 30;
             b.FlatAppearance.MouseOverBackColor = Hover;
+            b.Tag = "btn-secondary";
         }
 
         public static void StylePrimaryButton(Button b)
@@ -109,6 +112,7 @@ namespace XBit
             b.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
             b.Height = 36;
             b.FlatAppearance.MouseOverBackColor = Color.FromArgb(50, 110, 220);
+            b.Tag = "btn-primary";
         }
 
         public static void EnableDoubleBuffer(Control c)
@@ -387,49 +391,97 @@ namespace XBit
         {
             void Walk(Control c)
             {
-                switch (c)
+                // "no-theme" 태그가 붙은 컨트롤은 색상 변경 생략 (단, 자식은 계속 순회)
+                string ctag = c.Tag as string;
+                if (ctag != "no-theme")
                 {
-                    case Form f:
-                        f.BackColor = BgMain;
-                        f.ForeColor = FgPrimary;
-                        break;
-                    case Panel p:
-                        if (p.Dock == DockStyle.Left) p.BackColor = BgSidebar;
-                        else if (p.Dock == DockStyle.Top && p.Height <= 60) p.BackColor = BgCard;
-                        else if (p.Tag as string == "card") p.BackColor = BgCard;
-                        else p.BackColor = BgMain;
-                        break;
-                    case Label l:
-                        if (l.Tag as string == "muted") l.ForeColor = FgMuted; else l.ForeColor = FgDefault;
-                        break;
-                    case CheckBox cb:
-                        cb.ForeColor = FgDefault;
-                        break;
-                    case DataGridView g:
-                        g.BackgroundColor = BgCard;
-                        g.BorderStyle = BorderStyle.None;
-                        g.EnableHeadersVisualStyles = false;
-                        g.ColumnHeadersDefaultCellStyle.BackColor = Hover;
-                        g.ColumnHeadersDefaultCellStyle.ForeColor = FgPrimary;
-                        g.DefaultCellStyle.BackColor = BgCard;
-                        g.DefaultCellStyle.ForeColor = FgDefault;
-                        g.DefaultCellStyle.SelectionBackColor = Accent;
-                        g.DefaultCellStyle.SelectionForeColor = Color.White;
-                        g.GridColor = Border;
-                        break;
-                    case TextBox tb:
-                        tb.BackColor = BgCard;
-                        tb.ForeColor = FgDefault;
-                        tb.BorderStyle = BorderStyle.FixedSingle;
-                        break;
-                    case RichTextBox rtb:
-                        rtb.BackColor = BgCard;
-                        rtb.ForeColor = FgDefault;
-                        rtb.BorderStyle = BorderStyle.FixedSingle;
-                        break;
-                    case Button b:
-                        if (b.Dock != DockStyle.Top) b.ForeColor = FgDefault;
-                        break;
+                    switch (c)
+                    {
+                        case Form f:
+                            f.BackColor = BgMain;
+                            f.ForeColor = FgPrimary;
+                            break;
+                        case Panel p:
+                            // 탑바는 사이드바 색
+                            if (p.Name == "pnlTopBar" || ctag == "topbar" || ctag == "sidebar")
+                                p.BackColor = BgSidebar;
+                            // 왼쪽 독 패널은 사이드바 색
+                            else if (p.Dock == DockStyle.Left)
+                                p.BackColor = BgSidebar;
+                            // "card" 태그 패널은 카드 배경
+                            else if (ctag == "card")
+                                p.BackColor = BgCard;
+                            // 나머지는 메인 배경
+                            else
+                                p.BackColor = BgMain;
+                            break;
+                        case Label l:
+                            if ((l.Tag as string) == "muted") l.ForeColor = FgMuted;
+                            else l.ForeColor = FgDefault;
+                            break;
+                        case CheckBox cb:
+                            cb.ForeColor = FgDefault;
+                            break;
+                        case ComboBox cmb:
+                            cmb.BackColor = BgCard;
+                            cmb.ForeColor = FgDefault;
+                            break;
+                        case DataGridView g:
+                            g.BackgroundColor = BgCard;
+                            g.BorderStyle = BorderStyle.None;
+                            g.EnableHeadersVisualStyles = false;
+                            g.ColumnHeadersDefaultCellStyle.BackColor = Hover;
+                            g.ColumnHeadersDefaultCellStyle.ForeColor = FgPrimary;
+                            g.DefaultCellStyle.BackColor = BgCard;
+                            g.DefaultCellStyle.ForeColor = FgDefault;
+                            g.DefaultCellStyle.SelectionBackColor = Accent;
+                            g.DefaultCellStyle.SelectionForeColor = Color.White;
+                            g.GridColor = Border;
+                            break;
+                        case TextBox tb:
+                            tb.BackColor = BgCard;
+                            tb.ForeColor = FgDefault;
+                            tb.BorderStyle = BorderStyle.FixedSingle;
+                            break;
+                        case RichTextBox rtb:
+                            rtb.BackColor = BgCard;
+                            rtb.ForeColor = FgDefault;
+                            rtb.BorderStyle = BorderStyle.FixedSingle;
+                            break;
+                        case Button b:
+                            switch (b.Tag as string)
+                            {
+                                case "btn-primary":
+                                    b.BackColor = Primary;
+                                    b.ForeColor = Color.White;
+                                    b.FlatAppearance.MouseOverBackColor = Color.FromArgb(50, 110, 220);
+                                    break;
+                                case "btn-danger":
+                                    b.BackColor = Current == AppTheme.Dark ? Color.FromArgb(120, 30, 30) : Color.FromArgb(255, 235, 235);
+                                    b.ForeColor = Current == AppTheme.Dark ? Color.White : Color.FromArgb(180, 0, 0);
+                                    break;
+                                case "btn-nav":
+                                    b.BackColor = BgSidebar;
+                                    b.ForeColor = FgPrimary;
+                                    b.FlatAppearance.MouseOverBackColor = Hover;
+                                    break;
+                                case "btn-topbar":
+                                    b.BackColor = BgSidebar;
+                                    b.ForeColor = FgPrimary;
+                                    break;
+                                case "btn-secondary":
+                                    b.BackColor = BgCard;
+                                    b.ForeColor = FgPrimary;
+                                    b.FlatAppearance.BorderColor = Border;
+                                    b.FlatAppearance.MouseOverBackColor = Hover;
+                                    break;
+                                default:
+                                    b.BackColor = BgCard;
+                                    b.ForeColor = FgDefault;
+                                    break;
+                            }
+                            break;
+                    }
                 }
                 foreach (Control child in c.Controls) Walk(child);
             }

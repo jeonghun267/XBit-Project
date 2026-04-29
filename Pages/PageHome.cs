@@ -1,6 +1,4 @@
-﻿// Pages/PageHome.cs (중복 메서드 제거, 통계 로직 유지)
-
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using System.Drawing;
 using System.Windows.Forms;
 using XBit;
@@ -35,14 +33,46 @@ namespace XBit.Pages
             LoadData();
             LoadStatisticsSectionAsync(); // 통계 로드 요청
 
+            // [핵심] 화면이 다시 보일 때마다 데이터 새로고침 (페이지 이동 후 복귀 시 갱신)
+            this.VisibleChanged += (s, e) =>
+            {
+                if (this.Visible)
+                {
+                    LoadData();
+                    LoadStatisticsSectionAsync();
+                }
+            };
+
             Theme.ThemeChanged += () =>
             {
                 BackColor = Theme.BgMain;
+                // 카드 내부 라벨 색상까지 전부 갱신
                 foreach (Control c in wrap.Controls)
                 {
-                    if (c is Panel p) p.BackColor = Theme.BgCard;
+                    if (c is Panel p)
+                    {
+                        if (c == pnlRecentActivity || c == pnlStats)
+                            p.BackColor = Theme.BgCard;
+                        else if ((p.Tag as string ?? "").StartsWith("card_"))
+                            p.BackColor = Theme.BgCard;
+                        foreach (Control child in p.Controls)
+                        {
+                            if (child is Label lbl && (lbl.Tag as string) != "no-theme")
+                                lbl.ForeColor = (lbl.Tag as string) == "subtitle" || (lbl.Tag as string) == "last_update"
+                                    ? Theme.FgMuted : Theme.FgDefault;
+                        }
+                    }
                 }
-                if (pnlStats != null) pnlStats.BackColor = Theme.BgCard;
+                // 최근 활동 아이템 라벨들
+                var actList = pnlRecentActivity?.Controls.OfType<FlowLayoutPanel>().FirstOrDefault();
+                if (actList != null)
+                    foreach (Control item in actList.Controls)
+                    {
+                        item.BackColor = Theme.BgMain;
+                        foreach (Control ch in item.Controls)
+                            if (ch is Label ll && (ll.Tag as string) != "no-theme")
+                                ll.ForeColor = Theme.FgDefault;
+                    }
                 Invalidate(true);
             };
 
@@ -303,7 +333,7 @@ namespace XBit.Pages
                 };
                 chartPanel.Controls.Add(lblDonutInfo);
 
-                // --- 기존 트렌드(꺾은선) 대신: 이번 달 출석 캘린더 로드 ---
+                // --- 이번 달 출석 캘린더 로드 ---
                 try
                 {
                     int year = DateTime.Now.Year;
@@ -367,7 +397,6 @@ namespace XBit.Pages
             }
         }
 
-        // 이하 기존 카드/활동 로직 (변경 없음)
         private void AdjustCardSizes()
         {
             if (wrap == null) return;
@@ -414,7 +443,7 @@ namespace XBit.Pages
             };
             Theme.StyleCard(card);
 
-            var accentBar = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = accentColor, Margin = new Padding(0) };
+            var accentBar = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = accentColor, Margin = new Padding(0), Tag = "no-theme" };
 
             var lblTitle = new Label
             {
@@ -455,6 +484,15 @@ namespace XBit.Pages
             card.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
             card.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
 
+            // 자식 컨트롤 클릭도 카드 클릭으로 전파
+            foreach (Control child in card.Controls)
+            {
+                child.Click += (s, e) => Card_Click(tag);
+                child.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
+                child.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
+                child.Cursor = Cursors.Hand;
+            }
+
             return card;
         }
 
@@ -491,6 +529,13 @@ namespace XBit.Pages
 
             panel.Controls.Add(lblTitle);
             panel.Controls.Add(activityList);
+
+            panel.Resize += (s, e) =>
+            {
+                activityList.Width = panel.Width - 40;
+                foreach (Control c in activityList.Controls)
+                    c.Width = activityList.Width - 4;
+            };
 
             return panel;
         }
@@ -542,7 +587,6 @@ namespace XBit.Pages
                     foreach (var team in userTeams)
                     {
                         var tasks = _task_service.GetTasksByTeam(team.Id);
-                        // 상태 문자열 불일치(한영) 대비: "진행 중" 또는 "InProgress" 등으로 판단
                         inProgressTasks += tasks.Count(t =>
                             string.Equals(t.Status, "InProgress", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(t.Status, "진행 중", StringComparison.OrdinalIgnoreCase)
@@ -593,16 +637,25 @@ namespace XBit.Pages
 
                 foreach (var assignment in recentAssignments)
                 {
-                    activityList.Controls.Add(CreateActivityItem("✅ 과제 제출 완료", assignment.Title, assignment.DueDate.ToString("yyyy-MM-dd HH:mm")));
+                    var aid = assignment.Id;
+                    activityList.Controls.Add(CreateActivityItem(
+                        "✅ 과제 제출 완료", assignment.Title,
+                        assignment.DueDate.ToString("MM/dd HH:mm"),
+                        () => (FindForm() as MainForm)?.NavigateTo<PageAssignmentDetail>(aid)));
                 }
 
                 try
                 {
                     var allPosts = _board_service.GetAllPosts();
-                    var recentPosts = allPosts.Where(p => p.AuthorId == AuthService.CurrentUser.Id).OrderByDescending(p => p.CreatedDate).Take(3);
+                    var recentPosts = allPosts.Where(p => p.AuthorId == AuthService.CurrentUser.Id)
+                                              .OrderByDescending(p => p.CreatedDate).Take(3);
                     foreach (var post in recentPosts)
                     {
-                        activityList.Controls.Add(CreateActivityItem("📝 게시물 작성", post.Title, post.CreatedDate.ToString("yyyy-MM-dd HH:mm")));
+                        var pid = post.Id;
+                        activityList.Controls.Add(CreateActivityItem(
+                            "📝 게시물 작성", post.Title,
+                            post.CreatedDate.ToString("MM/dd HH:mm"),
+                            () => (FindForm() as MainForm)?.NavigateTo<PagePostDetail>(pid)));
                     }
                 }
                 catch { }
@@ -619,17 +672,83 @@ namespace XBit.Pages
             }
         }
 
-        private Panel CreateActivityItem(string type, string title, string time)
+        private Panel CreateActivityItem(string type, string title, string time, Action navigate = null)
         {
-            var item = new Panel { Width = 640, Height = 50, BackColor = Theme.BgMain, Margin = new Padding(0, 5, 0, 5), Padding = new Padding(10) };
+            bool clickable = navigate != null;
+            var item = new Panel
+            {
+                Height = 54,
+                BackColor = Theme.BgMain,
+                Margin = new Padding(0, 3, 0, 3),
+                Padding = new Padding(0),
+                Cursor = clickable ? Cursors.Hand : Cursors.Default
+            };
 
-            var lblType = new Label { Text = type, Font = new Font("맑은 고딕", 9f, FontStyle.Bold), ForeColor = Theme.AccentColor, AutoSize = true, Location = new Point(10, 5) };
-            var lblTitle = new Label { Text = title, Font = new Font("맑은 고딕", 10f), ForeColor = Theme.FgDefault, AutoSize = false, Size = new Size(500, 20), Location = new Point(10, 22) };
-            var lblTime = new Label { Text = time, Font = new Font("맑은 고딕", 8f), ForeColor = Theme.FgMuted, AutoSize = true, Location = new Point(520, 25) };
+            // TableLayoutPanel: 왼쪽(내용) / 오른쪽(시간)
+            var table = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 2,
+                Padding = new Padding(10, 6, 10, 6),
+                Margin = new Padding(0),
+                BackColor = Theme.BgMain,
+                Tag = "no-theme"
+            };
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
-            item.Controls.Add(lblType);
-            item.Controls.Add(lblTitle);
-            item.Controls.Add(lblTime);
+            var lblType = new Label
+            {
+                Text = type,
+                Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
+                ForeColor = Theme.AccentColor,
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.BottomLeft,
+                Tag = "no-theme"
+            };
+
+            var lblTitle = new Label
+            {
+                Text = title,
+                Font = new Font("맑은 고딕", 10f),
+                ForeColor = Theme.FgDefault,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.TopLeft
+            };
+
+            var lblTime = new Label
+            {
+                Text = time,
+                Font = new Font("맑은 고딕", 8f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleRight,
+                Tag = "muted"
+            };
+
+            table.Controls.Add(lblType, 0, 0);
+            table.Controls.Add(lblTitle, 0, 1);
+            table.Controls.Add(lblTime, 1, 0);
+            table.SetRowSpan(lblTime, 2);
+
+            item.Controls.Add(table);
+
+            if (clickable)
+            {
+                EventHandler click = (s, e) => navigate();
+                item.Click += click;
+                table.Click += click;
+                foreach (Control c in table.Controls)
+                    c.Click += click;
+
+                item.MouseEnter += (s, e) => { item.BackColor = Theme.Hover; table.BackColor = Theme.Hover; };
+                item.MouseLeave += (s, e) => { item.BackColor = Theme.BgMain; table.BackColor = Theme.BgMain; };
+            }
 
             return item;
         }
@@ -696,7 +815,7 @@ namespace XBit.Pages
                 else { MessageBox.Show("동기화 실패!\n토큰과 권한을 확인하세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
         }
-        // PageHome: 출석 캘린더 로더
+
         private void LoadAttendanceCalendar(int year, int month, List<DateTime> activeDates)
         {
             if (pnlStats == null) return;
@@ -705,11 +824,9 @@ namespace XBit.Pages
             var chartPanel = dict["chartPanel"] as Panel;
             if (chartPanel == null) return;
 
-            // 이전 캘린더 제거 (재호출 대비)
             var existing = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "attendanceCalendar");
             if (existing != null) chartPanel.Controls.Remove(existing);
 
-            // 캘린더 크기/위치 산정 (donut 오른쪽에 배치)
             var donutControl = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "donut");
             int calWidth = donutControl != null ? Math.Max(220, chartPanel.Width - donutControl.Width - 40) : Math.Max(300, chartPanel.Width - 40);
             int calHeight = Math.Max(160, chartPanel.Height - 20);
@@ -726,7 +843,6 @@ namespace XBit.Pages
                 Margin = new Padding(0)
             };
 
-            // 위치 설정: donut 오른쪽이면 오른쪽 중앙, 없으면 가운데
             if (donutControl != null)
             {
                 cal.Location = new Point(chartPanel.Width / 2 + (chartPanel.Width / 2 - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
@@ -736,7 +852,6 @@ namespace XBit.Pages
                 cal.Location = new Point((chartPanel.Width - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
             }
 
-            // 요일 헤더 (일~토)
             string[] dayNames = new[] { "일", "월", "화", "수", "목", "금", "토" };
             int cellSize = Math.Max(28, Math.Min(46, calWidth / 8));
             foreach (var dn in dayNames)
@@ -755,11 +870,9 @@ namespace XBit.Pages
                 cal.Controls.Add(lbl);
             }
 
-            // 달력 시작 오프셋(1일의 요일)
             var firstOfMonth = new DateTime(year, month, 1);
-            int offset = (int)firstOfMonth.DayOfWeek; // Sunday=0 ... Saturday=6
+            int offset = (int)firstOfMonth.DayOfWeek;
 
-            // 빈칸 채우기
             for (int i = 0; i < offset; i++)
             {
                 var placeholder = new Panel
@@ -772,10 +885,8 @@ namespace XBit.Pages
                 cal.Controls.Add(placeholder);
             }
 
-            // activeDates 집합(날짜 비교는 Date 부분만)
             var activeSet = new HashSet<DateTime>((activeDates ?? new List<DateTime>()).Select(d => d.Date));
 
-            // 날짜 버튼 생성
             int daysInMonth = DateTime.DaysInMonth(year, month);
             for (int d = 1; d <= daysInMonth; d++)
             {
@@ -787,20 +898,18 @@ namespace XBit.Pages
                     Text = d.ToString(),
                     Width = cellSize,
                     Height = cellSize,
-                    BackColor = isActive ? Color.SeaGreen : Color.FromArgb(40, 40, 40),
-                    ForeColor = Color.White,
+                    BackColor = isActive ? Theme.Success : Theme.Hover,
+                    ForeColor = isActive ? Color.White : Theme.FgMuted,
                     FlatStyle = FlatStyle.Flat,
                     Margin = new Padding(2),
                     Tag = dt.Date,
-                    Enabled = false // 클릭 동작이 필요하면 true로 바꿔 핸들러 추가
+                    Enabled = false
                 };
-                // 모던 스타일: 테두리 제거
                 btn.FlatAppearance.BorderSize = 0;
 
                 cal.Controls.Add(btn);
             }
 
-            // 캘린더를 차트 패널에 추가
             chartPanel.Controls.Add(cal);
             cal.BringToFront();
         }

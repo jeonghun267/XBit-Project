@@ -1,42 +1,31 @@
-﻿// Pages/PageAssignmentDetail.cs (최종 완성본 - DB 연동 + UI 개선 + C# 7.3 호환)
-
 using System;
 using System.Windows.Forms;
 using System.Drawing;
 using XBit.Models;
 using XBit.Services;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.IO;
-using Octokit;
+using System.Threading.Tasks;
 
 namespace XBit.Pages
 {
     public class PageAssignmentDetail : UserControl
     {
-        private Assignment currentAssignment;
+        private Assignment _assignment;
         private readonly AssignmentService _assignmentService = new AssignmentService();
         private readonly GitHubService _gitHubService = new GitHubService();
-
-        // ⭐️ Label 충돌 해결: WinForms의 Label을 명시적으로 사용
-        private System.Windows.Forms.Label lblTitle;
-        private System.Windows.Forms.Label lblCourse;
-        private System.Windows.Forms.Label lblDueDate;
-        private System.Windows.Forms.Label lblStatusBadge;      // ✅ 상태 배지
-        private System.Windows.Forms.Label lblTimeRemaining;    // ✅ 남은 시간
-
-        private RichTextBox txtDescription;
-        private TextBox txtSubmissionNote; // 제출 메모 입력란 추가
-        private Button btnFileSelect;
-        private Button btnSubmit;
-        private TextBox txtFilePath;
-        private System.Windows.Forms.Label lblFileInfo;         // ✅ 파일 정보
-        private ProgressBar prgSubmitting;                       // ✅ 진행 표시
-
         private readonly FileService _fileService = new FileService();
 
-        private const int ContentWidth = 600;
+        // UI refs needed after init
+        private Label _lblTitle;
+        private Label _lblStatusBadge;
+        private Label _lblTimeRemaining;
+        private RichTextBox _txtDescription;
+        private TextBox _txtSubmissionNote;
+        private TextBox _txtFilePath;
+        private Label _lblFileInfo;
+        private ProgressBar _prgSubmitting;
+        private Button _btnSubmit;
+        private Button _btnFileSelect;
 
         public PageAssignmentDetail() : this(-1) { }
 
@@ -44,418 +33,527 @@ namespace XBit.Pages
         {
             Dock = DockStyle.Fill;
             BackColor = Theme.BgMain;
+            BuildLayout();
 
-            InitializeUIControls();
-
-            if (assignmentId != -1)
-            {
+            if (assignmentId > 0)
                 LoadAssignment(assignmentId);
-            }
-            else
-            {
-                System.Windows.Forms.MessageBox.Show("오류: 과제 정보를 찾을 수 없습니다.");
-            }
 
-            Theme.Apply(this);
+            Theme.ThemeChanged += () => { BackColor = Theme.BgMain; Theme.Apply(this); };
         }
 
-        private void LoadAssignment(int assignmentId)
+        private void LoadAssignment(int id)
         {
-            // ✅ 수정: 실제 DB 호출로 변경
-            currentAssignment = _assignmentService.GetAssignmentById(assignmentId);
-
-            if (currentAssignment == null)
+            _assignment = _assignmentService.GetAssignmentById(id);
+            if (_assignment == null)
             {
-                System.Windows.Forms.MessageBox.Show("오류: 과제 정보를 찾을 수 없습니다.");
+                MessageBox.Show("프로젝트 정보를 찾을 수 없습니다.", "오류");
                 return;
             }
-            DisplayAssignmentDetails();
+            PopulateFields();
         }
 
-        private void InitializeUIControls()
+        // ─────────────────────────────────────────────────────
+        // Layout
+        // ─────────────────────────────────────────────────────
+        private void BuildLayout()
         {
-            var layoutPanel = new FlowLayoutPanel
+            // ── Top bar (back button + breadcrumb)
+            var pnlTop = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 52,
+                BackColor = Theme.BgMain
+            };
+
+            var btnBack = new Button
+            {
+                Text = "← 뒤로",
+                Width = 80,
+                Height = 30,
+                Location = new Point(16, 11),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("맑은 고딕", 9.5f),
+                Cursor = Cursors.Hand
+            };
+            Theme.StyleButton(btnBack);
+            btnBack.Click += (s, e) => (FindForm() as MainForm)?.GoBack();
+
+            var lblBreadcrumb = new Label
+            {
+                Text = "프로젝트 / 상세",
+                Font = new Font("맑은 고딕", 9f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(108, 17)
+            };
+
+            pnlTop.Controls.Add(btnBack);
+            pnlTop.Controls.Add(lblBreadcrumb);
+
+            var topDivider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+
+            // ── Scrollable content
+            var scroll = new Panel
             {
                 Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.TopDown,
                 AutoScroll = true,
-                Padding = new System.Windows.Forms.Padding(20)
+                BackColor = Theme.BgMain,
+                Padding = new Padding(0, 0, 0, 20)
             };
 
-            // 제목
-            lblTitle = new System.Windows.Forms.Label
+            var content = new FlowLayoutPanel
             {
-                Font = new System.Drawing.Font("Segoe UI", 16f, System.Drawing.FontStyle.Bold),
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
                 AutoSize = true,
-                ForeColor = Theme.FgDefault,
-                Width = ContentWidth
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Top,
+                Padding = new Padding(24, 16, 24, 0)
             };
+            Theme.EnableDoubleBuffer(content);
 
-            // 과목
-            lblCourse = new System.Windows.Forms.Label
-            {
-                Font = new System.Drawing.Font("Segoe UI", 10f),
-                AutoSize = true,
-                ForeColor = Theme.FgMuted,
-                Width = ContentWidth
-            };
+            // Info card
+            content.Controls.Add(BuildInfoCard());
+            // Description card
+            content.Controls.Add(BuildDescriptionCard());
+            // Submission card
+            content.Controls.Add(BuildSubmissionCard());
 
-            // 마감일
-            lblDueDate = new System.Windows.Forms.Label
-            {
-                Font = new System.Drawing.Font("Segoe UI", 10f, System.Drawing.FontStyle.Italic),
-                AutoSize = true,
-                ForeColor = Theme.FgMuted,
-                Width = ContentWidth
-            };
+            scroll.Controls.Add(content);
 
-            // ✅ 상태 배지
-            lblStatusBadge = new System.Windows.Forms.Label
-            {
-                Font = new System.Drawing.Font("Segoe UI", 9f, System.Drawing.FontStyle.Bold),
-                AutoSize = true,
-                Padding = new System.Windows.Forms.Padding(8, 4, 8, 4),
-                Margin = new System.Windows.Forms.Padding(0, 5, 0, 0),
-                BackColor = Theme.BgCard,
-                ForeColor = Color.White
-            };
+            Controls.Add(scroll);
+            Controls.Add(topDivider);
+            Controls.Add(pnlTop);
+        }
 
-            // ✅ 남은 시간 표시
-            lblTimeRemaining = new System.Windows.Forms.Label
-            {
-                Font = new System.Drawing.Font("Segoe UI", 9f),
-                AutoSize = true,
-                ForeColor = Theme.FgMuted,
-                Margin = new System.Windows.Forms.Padding(0, 5, 0, 0)
-            };
+        // ── Info card (title, course, status, due date, time remaining)
+        private Panel BuildInfoCard()
+        {
+            var card = MakeCard(122);
+            card.Tag = "card";
 
-            // 설명 (읽기 전용: 과제 설명을 보여주기 위한 위젯)
-            txtDescription = new RichTextBox
+            _lblStatusBadge = new Label
             {
                 Text = "로딩 중...",
-                Height = 250,
-                Width = ContentWidth,
-                BackColor = Theme.BgCard,
+                Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Theme.FgMuted,
+                AutoSize = false,
+                Width = 80,
+                Height = 24,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Location = new Point(0, 0),
+                Tag = "no-theme"
+            };
+
+            _lblTitle = new Label
+            {
+                Text = "로딩 중...",
+                Font = new Font("맑은 고딕", 16f, FontStyle.Bold),
                 ForeColor = Theme.FgDefault,
-                ReadOnly = false  // 변경: 사용자가 직접 편집 가능
+                AutoSize = true,
+                Location = new Point(0, 30),
+                MaximumSize = new Size(550, 0)
             };
 
-            // 제출 메모: 사용자가 제출할 때 적는 내용 (편집 가능)
-            txtSubmissionNote = new TextBox
+            var lblCourseIcon = new Label
             {
-                Multiline = true,
-                Height = 80,
-                Width = ContentWidth,
-                BackColor = Theme.BgCard,
-                ForeColor = Theme.FgDefault,
-                Text = "", // 빈 상태
-                AcceptsReturn = true,
-                ScrollBars = ScrollBars.Vertical
+                Text = "📚",
+                Font = new Font("Segoe UI Emoji", 10f),
+                AutoSize = true,
+                Location = new Point(0, 68),
+                Tag = "no-theme"
             };
 
-            // 파일 선택 영역
-            var pnlSubmitRow = new FlowLayoutPanel
+            var lblCourseName = new Label
             {
-                Width = ContentWidth,
-                Height = 40,
-                FlowDirection = System.Windows.Forms.FlowDirection.LeftToRight,
-                Margin = new System.Windows.Forms.Padding(0, 10, 0, 0),
-                Padding = new System.Windows.Forms.Padding(0)
+                Name = "lblCourse",
+                Text = "",
+                Font = new Font("맑은 고딕", 10f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(22, 70)
             };
 
-            txtFilePath = new TextBox
+            var lblDueIcon = new Label
             {
-                Width = 380,
-                Height = 35,
-                Margin = new System.Windows.Forms.Padding(0),
-                ReadOnly = true,
-                BackColor = Theme.BgCard,
-                ForeColor = Theme.FgDefault
+                Text = "🗓",
+                Font = new Font("Segoe UI Emoji", 10f),
+                AutoSize = true,
+                Location = new Point(0, 92),
+                Tag = "no-theme"
             };
 
-            btnFileSelect = new Button
+            var lblDueDate = new Label
             {
-                Text = "파일 선택",
-                Width = 100,
-                Height = 35,
-                Margin = new System.Windows.Forms.Padding(10, 0, 5, 0)
+                Name = "lblDueDate",
+                Text = "",
+                Font = new Font("맑은 고딕", 10f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(22, 94)
             };
 
-            btnSubmit = new Button
-            {
-                Text = "제출하기",
-                Width = 100,
-                Height = 35,
-                Margin = new System.Windows.Forms.Padding(5, 0, 0, 0)
-            };
-
-            pnlSubmitRow.Controls.Add(txtFilePath);
-            pnlSubmitRow.Controls.Add(btnFileSelect);
-            pnlSubmitRow.Controls.Add(btnSubmit);
-
-            Theme.StylePrimaryButton(btnSubmit);
-            Theme.StyleButton(btnFileSelect);
-
-            btnFileSelect.Click += BtnFileSelect_Click;
-            btnSubmit.Click += BtnSubmit_Click;
-
-            // ✅ 파일 정보 라벨
-            lblFileInfo = new System.Windows.Forms.Label
+            _lblTimeRemaining = new Label
             {
                 Text = "",
+                Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
                 AutoSize = true,
-                ForeColor = Theme.FgMuted,
-                Font = new System.Drawing.Font("Segoe UI", 9f),
-                Margin = new System.Windows.Forms.Padding(0, 5, 0, 0)
+                Location = new Point(220, 94)
             };
 
-            // ✅ 진행 표시기
-            prgSubmitting = new ProgressBar
+            card.Controls.Add(_lblStatusBadge);
+            card.Controls.Add(_lblTitle);
+            card.Controls.Add(lblCourseIcon);
+            card.Controls.Add(lblCourseName);
+            card.Controls.Add(lblDueIcon);
+            card.Controls.Add(lblDueDate);
+            card.Controls.Add(_lblTimeRemaining);
+
+            return card;
+        }
+
+        // ── Description card
+        private Panel BuildDescriptionCard()
+        {
+            var card = MakeCard(0);
+            card.Tag = "card";
+            card.Margin = new Padding(0, 12, 0, 0);
+
+            var lblSec = new Label
             {
-                Width = ContentWidth,
+                Text = "설명",
+                Font = new Font("맑은 고딕", 11f, FontStyle.Bold),
+                ForeColor = Theme.FgDefault,
+                AutoSize = true,
+                Location = new Point(0, 0)
+            };
+
+            _txtDescription = new RichTextBox
+            {
+                Location = new Point(0, 28),
+                Height = 200,
+                BackColor = Theme.BgMain,
+                ForeColor = Theme.FgDefault,
+                BorderStyle = BorderStyle.None,
+                ReadOnly = false,
+                Font = new Font("맑은 고딕", 10f),
+                ScrollBars = RichTextBoxScrollBars.Vertical
+            };
+            _txtDescription.Width = 600;
+
+            card.Height = 240;
+            card.Controls.Add(lblSec);
+            card.Controls.Add(_txtDescription);
+
+            card.Resize += (s, e) =>
+            {
+                _txtDescription.Width = card.Width - 40;
+            };
+
+            return card;
+        }
+
+        // ── Submission card
+        private Panel BuildSubmissionCard()
+        {
+            var card = MakeCard(0);
+            card.Tag = "card";
+            card.Margin = new Padding(0, 12, 0, 0);
+
+            var lblSec = new Label
+            {
+                Text = "제출",
+                Font = new Font("맑은 고딕", 11f, FontStyle.Bold),
+                ForeColor = Theme.FgDefault,
+                AutoSize = true,
+                Location = new Point(0, 0)
+            };
+
+            // Submission note
+            var lblNote = new Label
+            {
+                Text = "제출 메모 (선택)",
+                Font = new Font("맑은 고딕", 9f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(0, 30)
+            };
+
+            _txtSubmissionNote = new TextBox
+            {
+                Multiline = true,
+                Height = 70,
+                Location = new Point(0, 50),
+                BackColor = Theme.BgMain,
+                ForeColor = Theme.FgDefault,
+                BorderStyle = BorderStyle.FixedSingle,
+                AcceptsReturn = true,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("맑은 고딕", 9.5f)
+            };
+            _txtSubmissionNote.Width = 600;
+
+            // File select row
+            var lblFile = new Label
+            {
+                Text = "파일 선택",
+                Font = new Font("맑은 고딕", 9f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(0, 136)
+            };
+
+            _txtFilePath = new TextBox
+            {
+                Location = new Point(0, 156),
+                Height = 32,
+                ReadOnly = true,
+                BackColor = Theme.BgMain,
+                ForeColor = Theme.FgDefault,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("맑은 고딕", 9.5f)
+            };
+            _txtFilePath.Width = 480;
+
+            _btnFileSelect = new Button { Text = "찾아보기", Width = 90, Height = 32, Location = new Point(488, 156) };
+            Theme.StyleButton(_btnFileSelect);
+            _btnFileSelect.Click += BtnFileSelect_Click;
+
+            _lblFileInfo = new Label
+            {
+                Text = "",
+                Font = new Font("맑은 고딕", 8.5f),
+                ForeColor = Theme.FgMuted,
+                AutoSize = true,
+                Location = new Point(0, 196)
+            };
+
+            _prgSubmitting = new ProgressBar
+            {
+                Location = new Point(0, 218),
                 Height = 4,
                 Style = ProgressBarStyle.Marquee,
-                Visible = false,
-                Margin = new System.Windows.Forms.Padding(0, 10, 0, 0)
+                Visible = false
+            };
+            _prgSubmitting.Width = 600;
+
+            _btnSubmit = new Button { Text = "제출하기", Width = 120, Height = 36, Location = new Point(0, 230) };
+            Theme.StylePrimaryButton(_btnSubmit);
+            _btnSubmit.Click += BtnSubmit_Click;
+
+            card.Height = 286;
+            card.Controls.Add(lblSec);
+            card.Controls.Add(lblNote);
+            card.Controls.Add(_txtSubmissionNote);
+            card.Controls.Add(lblFile);
+            card.Controls.Add(_txtFilePath);
+            card.Controls.Add(_btnFileSelect);
+            card.Controls.Add(_lblFileInfo);
+            card.Controls.Add(_prgSubmitting);
+            card.Controls.Add(_btnSubmit);
+
+            card.Resize += (s, e) =>
+            {
+                int w = card.Width - 40;
+                _txtSubmissionNote.Width = w;
+                _txtFilePath.Width = w - 108;
+                _btnFileSelect.Location = new Point(_txtFilePath.Right + 8, 156);
+                _prgSubmitting.Width = w;
             };
 
-            layoutPanel.Controls.AddRange(new Control[] {
-                lblTitle,
-                lblCourse,
-                lblDueDate,
-                lblStatusBadge,
-                lblTimeRemaining,
-                new System.Windows.Forms.Label { Text = "설명:", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
-                txtDescription,
-                new System.Windows.Forms.Label { Text = "제출 메모 (선택):", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
-                txtSubmissionNote, // 제출 메모 입력란 추가
-                new System.Windows.Forms.Label { Text = "제출:", AutoSize = true, Margin = new System.Windows.Forms.Padding(0, 10, 0, 0), ForeColor = Theme.FgDefault },
-                pnlSubmitRow,
-                lblFileInfo,
-                prgSubmitting
-            });
-            this.Controls.Add(layoutPanel);
+            return card;
         }
 
-        private void DisplayAssignmentDetails()
+        // Helper: card Panel with consistent style
+        private Panel MakeCard(int height)
         {
-            if (currentAssignment != null)
+            var card = new Panel
             {
-                lblTitle.Text = currentAssignment.Title;
-                lblCourse.Text = $"과목: {currentAssignment.Course}";
-                lblDueDate.Text = $"마감: {currentAssignment.DueDate:yyyy-MM-dd HH:mm}";
-                txtDescription.Text = currentAssignment.Content;
+                BackColor = Theme.BgCard,
+                Margin = new Padding(0),
+                Padding = new Padding(20, 16, 20, 16),
+                Tag = "card"
+            };
+            card.Width = 660;
+            if (height > 0) card.Height = height;
+            Theme.StyleCard(card);
 
-                // ✅ 상태 배지 업데이트
-                UpdateStatusBadge(currentAssignment.Status);
-
-                // ✅ 남은 시간 계산
-                UpdateTimeRemaining(currentAssignment.DueDate);
-            }
-            else
+            // Responsive width
+            this.Resize += (s, e) =>
             {
-                lblTitle.Text = "오류: 과제 정보 로드 실패";
-            }
+                int w = Math.Min(760, this.ClientSize.Width - 48);
+                card.Width = w;
+            };
+
+            return card;
         }
 
-        // ✅ 상태 배지 색상 업데이트 (C# 7.3 호환 - if/else 사용)
+        // ─────────────────────────────────────────────────────
+        // Data → UI
+        // ─────────────────────────────────────────────────────
+        private void PopulateFields()
+        {
+            var a = _assignment;
+
+            _lblTitle.Text = a.Title;
+            _txtDescription.Text = a.Content;
+
+            // Find labels in info card
+            var infoCard = Controls.Count > 0
+                ? FindControlByName<Label>(this, "lblCourse")
+                : null;
+            if (infoCard != null) infoCard.Text = a.Course;
+
+            var lblDue = FindControlByName<Label>(this, "lblDueDate");
+            if (lblDue != null) lblDue.Text = a.DueDate.ToString("yyyy년 MM월 dd일 HH:mm");
+
+            UpdateStatusBadge(a.Status);
+            UpdateTimeRemaining(a.DueDate);
+        }
+
+        private static T FindControlByName<T>(Control root, string name) where T : Control
+        {
+            foreach (Control c in root.Controls)
+            {
+                if (c is T t && c.Name == name) return t;
+                var found = FindControlByName<T>(c, name);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
         private void UpdateStatusBadge(string status)
         {
-            lblStatusBadge.Text = status;
-
-            if (status == "미제출")
-            {
-                lblStatusBadge.BackColor = Color.FromArgb(255, 152, 0);
-            }
-            else if (status == "제출 완료")
-            {
-                lblStatusBadge.BackColor = Color.FromArgb(76, 175, 80);
-            }
-            else if (status.Contains("PR 제출됨"))
-            {
-                lblStatusBadge.BackColor = Color.FromArgb(66, 133, 244);
-            }
-            else
-            {
-                lblStatusBadge.BackColor = Theme.BgCard;
-            }
-
-            lblStatusBadge.ForeColor = Color.White;
+            _lblStatusBadge.Text = status;
+            _lblStatusBadge.BackColor =
+                status == "제출 완료" ? Theme.Success :
+                status != null && status.Contains("PR 제출됨") ? Color.FromArgb(66, 133, 244) :
+                Color.FromArgb(255, 152, 0);
         }
 
-        // ✅ 남은 시간 계산 (C# 7.3 호환 - if/else 사용)
         private void UpdateTimeRemaining(DateTime dueDate)
         {
-            TimeSpan remaining = dueDate - DateTime.Now;
-
+            var remaining = dueDate - DateTime.Now;
             if (remaining.TotalHours < 0)
             {
-                lblTimeRemaining.Text = "⏰ 마감 완료";
-                lblTimeRemaining.ForeColor = Color.FromArgb(244, 67, 54);
+                _lblTimeRemaining.Text = "⏰ 마감됨";
+                _lblTimeRemaining.ForeColor = Color.FromArgb(244, 67, 54);
             }
             else if (remaining.TotalHours < 1)
             {
-                lblTimeRemaining.Text = $"⚠️ {(int)remaining.TotalMinutes}분 남음";
-                lblTimeRemaining.ForeColor = Color.FromArgb(244, 67, 54);
+                _lblTimeRemaining.Text = $"⚠ {(int)remaining.TotalMinutes}분 남음";
+                _lblTimeRemaining.ForeColor = Color.FromArgb(244, 67, 54);
             }
             else if (remaining.TotalHours < 24)
             {
-                lblTimeRemaining.Text = $"⏰ {(int)remaining.TotalHours}시간 {remaining.Minutes}분 남음";
-                lblTimeRemaining.ForeColor = Color.FromArgb(255, 152, 0);
+                _lblTimeRemaining.Text = $"⏰ {(int)remaining.TotalHours}시간 {remaining.Minutes}분 남음";
+                _lblTimeRemaining.ForeColor = Color.FromArgb(255, 152, 0);
             }
             else
             {
-                lblTimeRemaining.Text = $"📅 {(int)remaining.TotalDays}일 {remaining.Hours}시간 남음";
-                lblTimeRemaining.ForeColor = Theme.FgMuted;
+                _lblTimeRemaining.Text = $"📅 {(int)remaining.TotalDays}일 {remaining.Hours}시간 남음";
+                _lblTimeRemaining.ForeColor = Theme.FgMuted;
             }
         }
 
-        private void BtnFileSelect_Click(object sender, System.EventArgs e)
+        // ─────────────────────────────────────────────────────
+        // Event handlers
+        // ─────────────────────────────────────────────────────
+        private void BtnFileSelect_Click(object sender, EventArgs e)
         {
-            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            using (var dlg = new OpenFileDialog { Title = "제출할 파일 선택" })
             {
-                openFileDialog.Title = "제출할 파일 선택";
-                if (openFileDialog.ShowDialog() == DialogResult.OK)
-                {
-                    txtFilePath.Text = openFileDialog.FileName;
-
-                    // ✅ 파일 정보 표시
-                    var fileInfo = new FileInfo(openFileDialog.FileName);
-                    string sizeText = FormatFileSize(fileInfo.Length);
-                    lblFileInfo.Text = $"✓ {Path.GetFileName(openFileDialog.FileName)} ({sizeText})";
-                    lblFileInfo.ForeColor = Color.FromArgb(76, 175, 80);
-                }
+                if (dlg.ShowDialog() != DialogResult.OK) return;
+                _txtFilePath.Text = dlg.FileName;
+                var fi = new FileInfo(dlg.FileName);
+                _lblFileInfo.Text = $"✓ {fi.Name}  ({FormatSize(fi.Length)})";
+                _lblFileInfo.ForeColor = Theme.Success;
             }
         }
 
-        // ✅ 파일 크기 포맷
-        private string FormatFileSize(long bytes)
+        private async void BtnSubmit_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_txtFilePath.Text))
+            {
+                MessageBox.Show("제출할 파일을 먼저 선택해주세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (_assignment == null)
+            {
+                MessageBox.Show("프로젝트 정보가 로드되지 않았습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string localPath = _txtFilePath.Text;
+            string note = _txtSubmissionNote.Text?.Trim();
+
+            _btnSubmit.Enabled = false;
+            _btnFileSelect.Enabled = false;
+            _prgSubmitting.Visible = true;
+
+            try
+            {
+                if (!_fileService.SubmitFile(localPath, _assignment.Id))
+                    throw new InvalidOperationException("파일 복사에 실패했습니다.");
+
+                if (!string.IsNullOrEmpty(note))
+                {
+                    try { _fileService.SaveSubmissionNote(_assignment.Id, Path.GetFileName(localPath), note); } catch { }
+                }
+
+                string commitSha = await _gitHubService.CommitAndPushToClassroom(_assignment.Id, localPath);
+                string submissionUrl = await _gitHubService.GetSubmissionUrl(_assignment.Id);
+
+                if (!_assignmentService.UpdateAssignmentStatus(_assignment.Id, "제출 완료"))
+                {
+                    MessageBox.Show("상태 업데이트에 실패했습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                try
+                {
+                    var user = AuthService.CurrentUser;
+                    var name = user != null && !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user?.Username ?? "시스템";
+                    NotificationService.Create(user.Id, "프로젝트 제출 완료",
+                        $"{name}님이 '{_assignment.Title}' 프로젝트를 제출했습니다.", "Assignment", _assignment.Id);
+                }
+                catch { }
+
+                (FindForm() as MainForm)?.UpdateNotificationBadge();
+
+                var answer = MessageBox.Show(
+                    $"제출이 완료되었습니다!\n\nCommit: {commitSha.Substring(0, 7)}\nGitHub 저장소로 이동하시겠습니까?",
+                    "성공", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+
+                if (answer == DialogResult.Yes)
+                    try { System.Diagnostics.Process.Start(submissionUrl); } catch { }
+
+                (FindForm() as MainForm)?.GoBack();
+            }
+            catch (InvalidOperationException ex)
+            {
+                MessageBox.Show(ex.Message, "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"제출 중 오류가 발생했습니다:\n{ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _btnSubmit.Enabled = true;
+                _btnFileSelect.Enabled = true;
+                _prgSubmitting.Visible = false;
+            }
+        }
+
+        private string FormatSize(long bytes)
         {
             string[] sizes = { "B", "KB", "MB", "GB" };
             double len = bytes;
             int order = 0;
-            while (len >= 1024 && order < sizes.Length - 1)
-            {
-                order++;
-                len = len / 1024;
-            }
+            while (len >= 1024 && order < sizes.Length - 1) { order++; len /= 1024; }
             return $"{len:0.##} {sizes[order]}";
-        }
-
-        private async void BtnSubmit_Click(object sender, System.EventArgs e)
-        {
-            if (string.IsNullOrEmpty(txtFilePath.Text))
-            {
-                System.Windows.Forms.MessageBox.Show("제출할 파일을 먼저 선택해주세요.", "경고", 
-                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
-                return;
-            }
-
-            if (currentAssignment == null)
-            {
-                System.Windows.Forms.MessageBox.Show("과제 정보가 로드되지 않았습니다.", "오류", 
-                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-                return;
-            }
-
-            string localFilePath = txtFilePath.Text;
-            string submissionNote = txtSubmissionNote.Text?.Trim(); // 제출 메모 읽기
-
-            btnSubmit.Enabled = false;
-            btnFileSelect.Enabled = false;
-            prgSubmitting.Visible = true;
-
-            try
-            {
-                var fileCopied = _fileService.SubmitFile(localFilePath, currentAssignment.Id);
-
-                if (!fileCopied)
-                {
-                    throw new InvalidOperationException("파일 복사에 실패했습니다.");
-                }
-
-                // 제출 메모가 있으면 메모 저장
-                if (!string.IsNullOrEmpty(submissionNote))
-                {
-                    try
-                    {
-                        var fileName = Path.GetFileName(localFilePath);
-                        _fileService.SaveSubmissionNote(currentAssignment.Id, fileName, submissionNote);
-                    }
-                    catch
-                    {
-                        // 메모 저장 실패는 제출 실패로 처리하지 않음
-                    }
-                }
-                
-                // ⭐️ GitHub Classroom에 제출
-                string commitSha = await _gitHubService.CommitAndPushToClassroom(currentAssignment.Id, localFilePath);
-                string submissionUrl = await _gitHubService.GetSubmissionUrl(currentAssignment.Id);
-
-                // ⭐️ DB에 제출 완료 상태 + URL 저장 (변경: 결과 확인)
-                bool updated = _assignmentService.UpdateAssignmentStatus(currentAssignment.Id, "제출 완료");
-
-                if (updated)
-                {
-                    // 알림 생성: 제출을 발생시킨 사용자(또는 필요시 다른 대상)에게 알림 생성
-                    try
-                    {
-                        var senderName = AuthService.CurrentUser != null
-                            ? (!string.IsNullOrWhiteSpace(AuthService.CurrentUser.Name) ? AuthService.CurrentUser.Name : AuthService.CurrentUser.Username)
-                            : "시스템";
-
-                        NotificationService.Create(
-                            currentAssignment.UserId, // 수신자: 과제 소유자(필요시 변경)
-                            "과제 제출 완료",
-                            $"{senderName}님이 '{currentAssignment.Title}' 과제를 제출했습니다.",
-                            "Assignment",
-                            currentAssignment.Id
-                        );
-                    }
-                    catch
-                    {
-                        // 알림 실패는 치명적이지 않음
-                    }
-
-                    // 즉시 배지 갱신 보장 (PageNotifications가 열려있지 않아도)
-                    var mainForm = FindForm() as MainForm;
-                    mainForm?.UpdateNotificationBadge();
-                }
-                else
-                {
-                    // 업데이트 실패 시 사용자에게 알려줌
-                    System.Windows.Forms.MessageBox.Show("과제 상태 업데이트에 실패했습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-
-                System.Windows.Forms.MessageBox.Show(
-                    $"제출 완료!\n\n" +
-                    $"Commit SHA: {commitSha.Substring(0, 7)}\n" +
-                    $"저장소 URL: {submissionUrl}",
-                    "제출 완료", 
-                    System.Windows.Forms.MessageBoxButtons.OK, 
-                    System.Windows.Forms.MessageBoxIcon.Information
-                );
-
-                var main = FindForm() as MainForm;
-                main?.GoBack();
-            }
-            catch (InvalidOperationException ex)
-            {
-                System.Windows.Forms.MessageBox.Show(ex.Message, "오류", 
-                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
-            catch (Exception ex)
-            {
-                System.Windows.Forms.MessageBox.Show(
-                    $"제출 중 오류가 발생했습니다:\n{ex.Message}", "오류", 
-                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-            }
-            finally
-            {
-                btnSubmit.Enabled = true;
-                btnFileSelect.Enabled = true;
-                prgSubmitting.Visible = false;
-            }
         }
     }
 }

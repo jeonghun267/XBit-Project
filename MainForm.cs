@@ -44,6 +44,9 @@ namespace XBit
 
             // ⭐ 이벤트 구독: 알림 생성 시 즉시 배지 갱신
             NotificationService.NotificationCreated += OnNotificationCreated;
+
+            // 사용자 정보 변경 시 topbar 이름 갱신
+            AuthService.UserUpdated += RefreshUserStatus;
         }
 
         private void InitializeFormLayout()
@@ -67,6 +70,7 @@ namespace XBit
             var pnl = new Panel
             {
                 Name = "pnlTopBar",
+                Tag = "topbar",
                 Dock = DockStyle.Top,
                 Height = 50,
                 BackColor = Theme.BgSidebar
@@ -79,6 +83,7 @@ namespace XBit
             // 알림 버튼 추가
             btnNotification = CreateButton("🔔", 50, 50, DockStyle.Right, BtnNotification_Click);
             btnNotification.Font = new Font("Segoe UI Emoji", 16f);
+            btnNotification.Tag = "btn-topbar";
 
             // 알림 배지 (읽지 않은 알림 개수)
             lblNotificationBadge = new Label
@@ -171,7 +176,8 @@ namespace XBit
                 Dock = dock,
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Theme.BgSidebar,
-                ForeColor = Theme.FgPrimary
+                ForeColor = Theme.FgPrimary,
+                Tag = "btn-topbar"
             };
             button.FlatAppearance.BorderSize = 0;
             button.Click += clickHandler;
@@ -450,6 +456,14 @@ namespace XBit
             }
             clockTimer?.Stop();
             base.OnFormClosing(e);
+        }
+
+        public void RefreshUserStatus()
+        {
+            if (lblStatusUser == null || AuthService.CurrentUser == null) return;
+            lblStatusUser.Text = $"사용자: {AuthService.CurrentUser.Name}";
+            this.Text = $"XBit - Logged in as {AuthService.CurrentUser.Name}";
+            pnlTopBar?.PerformLayout();
         }
 
         // 동기 상태를 업데이트하는 헬퍼 (MainForm 클래스에 추가)

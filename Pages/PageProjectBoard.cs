@@ -46,6 +46,21 @@ namespace XBit.Pages
             LoadTeams();
 
             Theme.Apply(this);
+
+            Theme.ThemeChanged += () =>
+            {
+                BackColor = Theme.BgMain;
+                Theme.Apply(this);
+                // 카드 배경 갱신
+                for (int i = 0; i < StatusCount; i++)
+                {
+                    foreach (Control ctrl in pnlTasks[i].Controls)
+                    {
+                        if (ctrl is Panel taskCard && taskCard.Tag is TaskCardInfo)
+                            taskCard.BackColor = Theme.BgCard;
+                    }
+                }
+            };
         }
 
         private void InitializeUIControls()
@@ -243,7 +258,8 @@ namespace XBit.Pages
                     Dock = DockStyle.Fill,
                     BackColor = statusColors[i],
                     Padding = new Padding(0),
-                    Margin = new Padding(0)
+                    Margin = new Padding(0),
+                    Tag = "no-theme"
                 };
 
                 lblStatusTitle[i] = new System.Windows.Forms.Label
@@ -255,7 +271,8 @@ namespace XBit.Pages
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter,
                     Padding = new Padding(0),
-                    Margin = new Padding(0)
+                    Margin = new Padding(0),
+                    Tag = "no-theme"
                 };
                 pnlTitle.Controls.Add(lblStatusTitle[i]);
 
@@ -305,7 +322,7 @@ namespace XBit.Pages
             {
                 Width = ColumnWidth - 30,
                 Height = CardHeight,
-                BackColor = Color.White,
+                BackColor = Theme.BgCard,
                 BorderStyle = BorderStyle.FixedSingle,
                 Padding = new Padding(8),
                 Margin = new Padding(0, 0, 0, 8),
@@ -354,7 +371,8 @@ namespace XBit.Pages
                 ForeColor = Color.White,
                 AutoSize = true,
                 BackColor = GetPriorityColor(priority),
-                Padding = new Padding(4, 3, 4, 3)
+                Padding = new Padding(4, 3, 4, 3),
+                Tag = "no-theme"
             };
 
             cardLayout.Controls.Add(lblTitle, 0, 0);
