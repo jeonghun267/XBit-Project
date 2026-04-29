@@ -1,5 +1,4 @@
-﻿// Pages/PageHome.cs (개선된 버전)
-
+﻿using System.Threading.Tasks;
 using System.Drawing;
 using System.Windows.Forms;
 using XBit;
@@ -15,12 +14,15 @@ namespace XBit.Pages
     public class PageHome : UserControl
     {
         private readonly AssignmentService _assignmentService = new AssignmentService();
-        private readonly GitHubService _githubService = new GitHubService();
-        private readonly NotificationService _notificationService = new NotificationService();
-        private readonly BoardService _boardService = new BoardService();
-        private readonly TaskService _taskService = new TaskService();
+        private readonly GitHubService _github_service = new GitHubService();
+        private readonly NotificationService _notification_service = new NotificationService();
+        private readonly BoardService _board_service = new BoardService();
+        private readonly TaskService _task_service = new TaskService();
+        private readonly StatisticsService _statisticsService = new StatisticsService();
+
         private FlowLayoutPanel wrap;
         private Panel pnlRecentActivity;
+        private Panel pnlStats; // 통계 섹션 (차트 + 레이블)
 
         public PageHome()
         {
@@ -29,16 +31,52 @@ namespace XBit.Pages
 
             InitializeLayout();
             LoadData();
+            LoadStatisticsSectionAsync(); // 통계 로드 요청
+
+            // [핵심] 화면이 다시 보일 때마다 데이터 새로고침 (페이지 이동 후 복귀 시 갱신)
+            this.VisibleChanged += (s, e) =>
+            {
+                if (this.Visible)
+                {
+                    LoadData();
+                    LoadStatisticsSectionAsync();
+                }
+            };
 
             Theme.ThemeChanged += () =>
             {
                 BackColor = Theme.BgMain;
+                // 카드 내부 라벨 색상까지 전부 갱신
                 foreach (Control c in wrap.Controls)
                 {
-                    if (c is Panel p) p.BackColor = Theme.BgCard;
+                    if (c is Panel p)
+                    {
+                        if (c == pnlRecentActivity || c == pnlStats)
+                            p.BackColor = Theme.BgCard;
+                        else if ((p.Tag as string ?? "").StartsWith("card_"))
+                            p.BackColor = Theme.BgCard;
+                        foreach (Control child in p.Controls)
+                        {
+                            if (child is Label lbl && (lbl.Tag as string) != "no-theme")
+                                lbl.ForeColor = (lbl.Tag as string) == "subtitle" || (lbl.Tag as string) == "last_update"
+                                    ? Theme.FgMuted : Theme.FgDefault;
+                        }
+                    }
                 }
+                // 최근 활동 아이템 라벨들
+                var actList = pnlRecentActivity?.Controls.OfType<FlowLayoutPanel>().FirstOrDefault();
+                if (actList != null)
+                    foreach (Control item in actList.Controls)
+                    {
+                        item.BackColor = Theme.BgMain;
+                        foreach (Control ch in item.Controls)
+                            if (ch is Label ll && (ll.Tag as string) != "no-theme")
+                                ll.ForeColor = Theme.FgDefault;
+                    }
                 Invalidate(true);
             };
+
+            this.Resize += (s, e) => AdjustCardSizes();
         }
 
         private void InitializeLayout()
@@ -72,6 +110,9 @@ namespace XBit.Pages
             pnlTitle.Controls.Add(lblWelcome);
             pnlTitle.Controls.Add(lblSubtitle);
 
+            // 통계 섹션 생성 (차트 + 레이블)
+            pnlStats = CreateStatsPanel();
+
             wrap = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -80,57 +121,313 @@ namespace XBit.Pages
                 Padding = new Padding(20),
                 AutoScroll = true
             };
+            wrap.Margin = new Padding(0);
+            wrap.AutoSize = false;
             Theme.EnableDoubleBuffer(wrap);
 
-            // 카드들 추가
-            wrap.Controls.Add(MakeCard(
-                "오늘 마감 임박", 
-                "데이터 로드 중...", 
-                "card_due_today", 
-                Color.FromArgb(244, 67, 54)
-            ));
-            
-            wrap.Controls.Add(MakeCard(
-                "이번 주 프로젝트", 
-                "데이터 로드 중...", 
-                "card_due_week", 
-                Color.FromArgb(66, 133, 244)
-            ));
-            
-            wrap.Controls.Add(MakeCard(
-                "GitHub 상태", 
-                "데이터 로드 중...", 
-                "card_github", 
-                Color.FromArgb(76, 175, 80)
-            ));
+            // 홈 카드들
+            wrap.Controls.Add(MakeCard("오늘 마감 임박", "데이터 로드 중...", "card_due_today", Color.FromArgb(244, 67, 54)));
+            wrap.Controls.Add(MakeCard("이번 주 프로젝트", "데이터 로드 중...", "card_due_week", Color.FromArgb(66, 133, 244)));
+            wrap.Controls.Add(MakeCard("GitHub 상태", "데이터 로드 중...", "card_github", Color.FromArgb(76, 175, 80)));
+            wrap.Controls.Add(MakeCard("최근 게시물", "데이터 로드 중...", "card_board", Color.FromArgb(156, 39, 176)));
+            wrap.Controls.Add(MakeCard("진행 중인 작업", "데이터 로드 중...", "card_tasks", Color.FromArgb(0, 150, 136)));
 
-            wrap.Controls.Add(MakeCard(
-                "알림", 
-                "데이터 로드 중...", 
-                "card_notifications", 
-                Color.FromArgb(255, 152, 0)
-            ));
-
-            wrap.Controls.Add(MakeCard(
-                "최근 게시물", 
-                "데이터 로드 중...", 
-                "card_board", 
-                Color.FromArgb(156, 39, 176)
-            ));
-
-            wrap.Controls.Add(MakeCard(
-                "진행 중인 작업", 
-                "데이터 로드 중...", 
-                "card_tasks", 
-                Color.FromArgb(0, 150, 136)
-            ));
-
-            // 최근 활동 패널 추가
+            // 최근 활동 패널
             pnlRecentActivity = CreateRecentActivityPanel();
             wrap.Controls.Add(pnlRecentActivity);
 
+            // 통계 패널 (차트 + 레이블)
+            wrap.Controls.Add(pnlStats);
+
             Controls.Add(wrap);
             Controls.Add(pnlTitle);
+
+            this.Load += (s, e) => AdjustCardSizes();
+            wrap.Resize += (s, e) => AdjustCardSizes();
+        }
+
+        private Panel CreateStatsPanel()
+        {
+            var panel = new Panel
+            {
+                Width = 700,
+                Height = 380,
+                Margin = new Padding(10),
+                BackColor = Theme.BgCard
+            };
+            Theme.StyleCard(panel);
+
+            var lblTitle = new Label
+            {
+                Text = "통계 · 활동",
+                Font = new Font("맑은 고딕", 13f, FontStyle.Bold),
+                Location = new Point(20, 8),
+                AutoSize = true,
+                ForeColor = Theme.FgDefault
+            };
+
+            // 차트 전용 패널
+            var chartPanel = new Panel
+            {
+                Location = new Point(20, 50),
+                Width = panel.Width - 40,
+                Height = 310,
+                BackColor = Color.Transparent
+            };
+
+            panel.Controls.Add(lblTitle);
+            panel.Controls.Add(chartPanel);
+
+            panel.Tag = new Dictionary<string, Control>
+            {
+                { "chartPanel", chartPanel }
+            };
+
+            panel.Resize += (s, e) =>
+            {
+                try
+                {
+                    var dict = panel.Tag as Dictionary<string, Control>;
+                    var cPanel = dict["chartPanel"] as Panel;
+
+                    cPanel.Location = new Point(20, 50);
+                    cPanel.Width = Math.Max(300, panel.Width - 40);
+                    cPanel.Height = Math.Max(200, panel.Height - 70);
+
+                    // 차트와 레이블 재배치
+                    var donut = cPanel.Controls.OfType<Control>().FirstOrDefault(c2 => c2.Tag as string == "donut");
+                    var trend = cPanel.Controls.OfType<Control>().FirstOrDefault(c2 => c2.Tag as string == "trend");
+                    var donutInfo = cPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "donutInfo");
+                    var donutTitle = cPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "donutTitle");
+                    var trendTitle = cPanel.Controls.OfType<Label>().FirstOrDefault(l => l.Tag as string == "trendTitle");
+                    var trendLabels = cPanel.Controls.OfType<Panel>().FirstOrDefault(p2 => p2.Tag as string == "trendLabels");
+
+                    if (donut != null && trend != null)
+                    {
+                        int donutSize = Math.Min(240, Math.Max(120, cPanel.Width / 2 - 20));
+                        // Theme.CreateDonutChart는 내부적으로 size+40 폭을 사용하므로 동일한 규칙 적용
+                        donut.Width = donutSize + 40;
+                        donut.Height = donutSize + 60;
+
+                        int trendW = Math.Max(220, cPanel.Width - donut.Width - 40);
+                        trend.Width = trendW;
+                        trend.Height = Math.Max(160, cPanel.Height - 40); // leave space for labels
+
+                        donut.Location = new Point((cPanel.Width / 2 - donut.Width) / 2, (cPanel.Height - donut.Height - 24) / 2);
+                        trend.Location = new Point(cPanel.Width / 2 + (cPanel.Width / 2 - trend.Width) / 2, (cPanel.Height - trend.Height - 24) / 2);
+
+                        if (donutTitle != null)
+                        {
+                            var ttSize = TextRenderer.MeasureText(donutTitle.Text, donutTitle.Font);
+                            donutTitle.Location = new Point(donut.Left + (donut.Width - ttSize.Width) / 2, donut.Top - ttSize.Height - 6);
+                            donutTitle.BringToFront();
+                        }
+
+                        if (donutInfo != null)
+                        {
+                            var textSize = TextRenderer.MeasureText(donutInfo.Text, donutInfo.Font);
+                            donutInfo.Location = new Point(donut.Left + (donut.Width - textSize.Width) / 2, donut.Bottom + 6);
+                            donutInfo.BringToFront();
+                        }
+
+                        if (trendTitle != null)
+                        {
+                            var tSize = TextRenderer.MeasureText(trendTitle.Text, trendTitle.Font);
+                            trendTitle.Location = new Point(trend.Left + (trend.Width - tSize.Width) / 2, trend.Top - tSize.Height - 6);
+                            trendTitle.BringToFront();
+                        }
+
+                        // 트렌드 하단 라벨(월) 위치/폭 재계산
+                        if (trendLabels != null)
+                        {
+                            trendLabels.Location = new Point(trend.Left, trend.Bottom + 6);
+                            trendLabels.Width = trend.Width;
+                            int n = trendLabels.Controls.Count;
+                            if (n > 0)
+                            {
+                                int w = Math.Max(40, trendLabels.Width / n);
+                                foreach (Control c in trendLabels.Controls)
+                                {
+                                    c.Width = w;
+                                    c.Height = trendLabels.Height;
+                                }
+                            }
+                            trendLabels.BringToFront();
+                        }
+                    }
+                }
+                catch { /* 무시 */ }
+            };
+
+            return panel;
+        }
+
+        private async void LoadStatisticsSectionAsync()
+        {
+            if (pnlStats == null) return;
+
+            try
+            {
+                var stats = await Task.Run(() => _statisticsService.GetUserStatistics(AuthService.CurrentUser.Id));
+
+                var dict = pnlStats.Tag as Dictionary<string, Control>;
+                var chartPanel = dict["chartPanel"] as Panel;
+
+                chartPanel.Controls.Clear();
+
+                int donutSize = Math.Min(240, Math.Max(120, chartPanel.Width / 2 - 20));
+
+                int totalTasks = 0;
+                int completedTasks = 0;
+                try
+                {
+                    var teamService = new TeamService();
+                    var userTeams = teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
+                    foreach (var team in userTeams)
+                    {
+                        var tasks = _task_service.GetTasksByTeam(team.Id);
+                        if (tasks == null) continue;
+
+                        totalTasks += tasks.Count;
+                        completedTasks += tasks.Count(t =>
+                            string.Equals(t.Status, "완료", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)
+                            || (t.Status != null && t.Status.IndexOf("완료", StringComparison.OrdinalIgnoreCase) >= 0)
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PageHome] Task counts load error: {ex.Message}");
+                    totalTasks = Math.Max(1, stats?.TotalAssignments ?? 1);
+                    completedTasks = stats?.CompletedAssignments ?? 0;
+                }
+
+                int donutTotal = Math.Max(1, totalTasks);
+                int donutCompleted = Math.Max(0, completedTasks);
+
+                var lblDonutTitle = new Label
+                {
+                    Text = "완료율",
+                    Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
+                    ForeColor = Theme.FgPrimary,
+                    BackColor = Color.Transparent,
+                    AutoSize = true,
+                    Tag = "donutTitle"
+                };
+                chartPanel.Controls.Add(lblDonutTitle);
+
+                var donut = Theme.CreateDonutChart(donutCompleted, donutTotal, Theme.Success, "완료율", donutSize);
+                donut.Tag = "donut";
+                donut.Location = new Point((chartPanel.Width / 2 - donut.Width) / 2, (chartPanel.Height - donut.Height) / 2);
+                chartPanel.Controls.Add(donut);
+
+                var lblDonutInfo = new Label
+                {
+                    Text = $"{donutCompleted}/{donutTotal} 완료",
+                    Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
+                    ForeColor = Theme.FgPrimary,
+                    BackColor = Color.Transparent,
+                    AutoSize = true,
+                    Tag = "donutInfo"
+                };
+                chartPanel.Controls.Add(lblDonutInfo);
+
+                // --- 이번 달 출석 캘린더 로드 ---
+                try
+                {
+                    int year = DateTime.Now.Year;
+                    int month = DateTime.Now.Month;
+                    var activeDates = new List<DateTime>();
+
+                    // 게시물로부터 활동일 수집 (작성일)
+                    try
+                    {
+                        var allPosts = _board_service.GetAllPosts();
+                        if (allPosts != null)
+                        {
+                            foreach (var p in allPosts)
+                            {
+                                if (p.AuthorId == AuthService.CurrentUser.Id && p.CreatedDate.Year == year && p.CreatedDate.Month == month)
+                                {
+                                    activeDates.Add(p.CreatedDate.Date);
+                                }
+                            }
+                        }
+                    }
+                    catch { /* 게시물 수집 실패 무시 */ }
+
+                    // 제출된 과제(대체 데이터)로부터 활동일 수집 (DueDate 기준)
+                    try
+                    {
+                        var assignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id);
+                        if (assignments != null)
+                        {
+                            foreach (var a in assignments)
+                            {
+                                if (string.Equals(a.Status, "제출 완료", StringComparison.OrdinalIgnoreCase)
+                                    && a.DueDate.Year == year && a.DueDate.Month == month)
+                                {
+                                    activeDates.Add(a.DueDate.Date);
+                                }
+                            }
+                        }
+                    }
+                    catch { /* 과제 수집 실패 무시 */ }
+
+                    // 중복 제거
+                    activeDates = activeDates.Select(d => d.Date).Distinct().ToList();
+
+                    // 캘린더 로드
+                    LoadAttendanceCalendar(year, month, activeDates);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PageHome] Attendance calendar build failed: {ex.Message}");
+                }
+
+                // 도넛 툴팁
+                Theme.CreateToolTip(donut, $"완료된 작업: {donutCompleted} / 총 작업: {donutTotal}");
+
+                chartPanel.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PageHome] LoadStatisticsSectionAsync 오류: {ex.Message}");
+            }
+        }
+
+        private void AdjustCardSizes()
+        {
+            if (wrap == null) return;
+
+            int available = Math.Max(400, wrap.ClientSize.Width - wrap.Padding.Left - wrap.Padding.Right);
+            int approxItem = 360;
+            int columns = Math.Max(1, available / approxItem);
+            int spacing = 20;
+            int itemWidth = (available - (columns + 1) * spacing) / columns;
+            itemWidth = Math.Min(340, Math.Max(260, itemWidth));
+
+            foreach (Control c in wrap.Controls)
+            {
+                if (c == pnlRecentActivity || c == pnlStats) continue;
+                if (c is Panel panel && panel.Tag is string tag && tag.StartsWith("card_"))
+                {
+                    panel.Width = itemWidth;
+                }
+            }
+
+            if (pnlStats != null)
+            {
+                if (wrap.ClientSize.Width < 800)
+                {
+                    pnlStats.Width = Math.Max(300, itemWidth * 2 + spacing);
+                }
+                else
+                {
+                    pnlStats.Width = 700;
+                }
+            }
         }
 
         private Panel MakeCard(string title, string subtitle, string tag, Color accentColor)
@@ -146,13 +443,7 @@ namespace XBit.Pages
             };
             Theme.StyleCard(card);
 
-            var accentBar = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 4,
-                BackColor = accentColor,
-                Margin = new Padding(0)
-            };
+            var accentBar = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = accentColor, Margin = new Padding(0), Tag = "no-theme" };
 
             var lblTitle = new Label
             {
@@ -193,6 +484,15 @@ namespace XBit.Pages
             card.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
             card.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
 
+            // 자식 컨트롤 클릭도 카드 클릭으로 전파
+            foreach (Control child in card.Controls)
+            {
+                child.Click += (s, e) => Card_Click(tag);
+                child.MouseEnter += (s, e) => card.BackColor = Theme.Hover;
+                child.MouseLeave += (s, e) => card.BackColor = Theme.BgCard;
+                child.Cursor = Cursors.Hand;
+            }
+
             return card;
         }
 
@@ -230,10 +530,17 @@ namespace XBit.Pages
             panel.Controls.Add(lblTitle);
             panel.Controls.Add(activityList);
 
+            panel.Resize += (s, e) =>
+            {
+                activityList.Width = panel.Width - 40;
+                foreach (Control c in activityList.Controls)
+                    c.Width = activityList.Width - 4;
+            };
+
             return panel;
         }
 
-        private void LoadData()
+        public void LoadData()
         {
             try
             {
@@ -244,107 +551,72 @@ namespace XBit.Pages
                 }
 
                 var assignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id);
-                
-                System.Diagnostics.Debug.WriteLine($"[PageHome] 프로젝트 수: {assignments.Count}");
-                
                 DateTime now = DateTime.Now;
 
-                // 오늘 마감 임박
-                var dueTodayCount = assignments.Count(a => 
-                    (a.DueDate - now).TotalHours <= 24 && 
-                    (a.DueDate - now).TotalHours > 0 && 
+                var dueTodayCount = assignments.Count(a =>
+                    (a.DueDate - now).TotalHours <= 24 &&
+                    (a.DueDate - now).TotalHours > 0 &&
                     a.Status != "제출 완료"
                 );
 
-                // 이번 주 프로젝트
                 DateTime startOfWeek = now.Date.AddDays(-(int)now.DayOfWeek);
                 DateTime endOfWeek = startOfWeek.AddDays(7);
                 var dueThisWeek = assignments.Where(a => a.DueDate >= startOfWeek && a.DueDate < endOfWeek).ToList();
                 var submittedCount = dueThisWeek.Count(a => a.Status == "제출 완료");
 
-                // GitHub 상태
                 var githubUser = SettingsService.Current?.Integrations?.GitHubUser;
                 int changedFiles = 0;
-                try
-                {
-                    changedFiles = _githubService.GetChangedFilesCount();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[PageHome] GitHub 상태 확인 실패: {ex.Message}");
-                }
+                try { changedFiles = _github_service.GetChangedFilesCount(); }
+                catch { }
 
-                // 알림
-                int unreadNotifications = _notificationService.GetUnreadCount(AuthService.CurrentUser.Id);
+                int unreadNotifications = _notification_service.GetUnreadCount(AuthService.CurrentUser.Id);
 
-                // 최근 게시물
                 List<Post> recentPosts = new List<Post>();
                 try
                 {
-                    var allPosts = _boardService.GetAllPosts();
+                    var allPosts = _board_service.GetAllPosts();
                     recentPosts = allPosts.OrderByDescending(p => p.CreatedDate).Take(5).ToList();
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[PageHome] 게시물 로드 실패: {ex.Message}");
-                }
+                catch { }
 
-                // 진행 중인 작업
                 int inProgressTasks = 0;
                 try
                 {
-                    // TeamService를 통해 사용자의 팀을 가져온 후 해당 팀의 작업들을 확인
                     var teamService = new TeamService();
                     var userTeams = teamService.GetTeamsByUser(AuthService.CurrentUser.Id);
                     foreach (var team in userTeams)
                     {
-                        var tasks = _taskService.GetTasksByTeam(team.Id);
-                        inProgressTasks += tasks.Count(t => t.Status == "InProgress");
+                        var tasks = _task_service.GetTasksByTeam(team.Id);
+                        inProgressTasks += tasks.Count(t =>
+                            string.Equals(t.Status, "InProgress", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(t.Status, "진행 중", StringComparison.OrdinalIgnoreCase)
+                            || (t.Status != null && t.Status.IndexOf("진행", StringComparison.OrdinalIgnoreCase) >= 0)
+                        );
                     }
                 }
-                catch (Exception ex)
+                catch { }
+
+                UpdateCardText("card_due_today", dueTodayCount > 0 ? $"{dueTodayCount}개의 프로젝트\n24시간 이내 마감!" : "마감 임박 프로젝트 없음\n여유롭게 시작하세요");
+                UpdateCardText("card_due_week", $"총 {dueThisWeek.Count}개 프로젝트\n제출: {submittedCount} / 미제출: {dueThisWeek.Count - submittedCount}");
+
+                if (!string.IsNullOrWhiteSpace(githubUser) && !string.IsNullOrWhiteSpace(SettingsService.Current?.Integrations?.GitHubToken))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[PageHome] 작업 로드 실패: {ex.Message}");
-                }
-
-                // 카드 업데이트
-                UpdateCardText("card_due_today", dueTodayCount > 0 
-                    ? $"{dueTodayCount}개의 프로젝트\n24시간 이내 마감!" 
-                    : "마감 임박 프로젝트 없음\n여유롭게 시작하세요");
-
-                UpdateCardText("card_due_week", 
-                    $"총 {dueThisWeek.Count}개 프로젝트\n제출: {submittedCount} / 미제출: {dueThisWeek.Count - submittedCount}");
-
-                if (!string.IsNullOrWhiteSpace(githubUser) && 
-                    !string.IsNullOrWhiteSpace(SettingsService.Current?.Integrations?.GitHubToken))
-                {
-                    UpdateCardText("card_github", changedFiles > 0 
-                        ? $"변경된 파일 {changedFiles}개\n클릭하여 동기화" 
-                        : "모든 변경사항 동기화됨\n최신 상태입니다");
+                    UpdateCardText("card_github", changedFiles > 0 ? $"변경된 파일 {changedFiles}개\n클릭하여 동기화" : "모든 변경사항 동기화됨\n최신 상태입니다");
                 }
                 else
                 {
                     UpdateCardText("card_github", "GitHub 연동 필요\n설정에서 토큰을 입력하세요");
                 }
 
-                UpdateCardText("card_notifications", unreadNotifications > 0
-                    ? $"읽지 않은 알림 {unreadNotifications}개\n확인이 필요합니다"
-                    : "모든 알림 확인 완료\n새로운 알림이 없습니다");
-
-                UpdateCardText("card_board", recentPosts.Count > 0
-                    ? $"최근 게시물 {recentPosts.Count}개\n클릭하여 확인하세요"
-                    : "새로운 게시물이 없습니다\n게시판을 확인해보세요");
-
-                UpdateCardText("card_tasks", inProgressTasks > 0
-                    ? $"진행 중인 작업 {inProgressTasks}개\n완료까지 힘내세요!"
-                    : "진행 중인 작업이 없습니다\n새로운 작업을 시작하세요");
+                UpdateCardText("card_board", recentPosts.Count > 0 ? $"최근 게시물 {recentPosts.Count}개\n클릭하여 확인하세요" : "새로운 게시물이 없습니다\n게시판을 확인해보세요");
+                UpdateCardText("card_tasks", inProgressTasks > 0 ? $"진행 중인 작업 {inProgressTasks}개\n완료까지 힘내세요!" : "진행 중인 작업이 없습니다\n새로운 작업을 시작하세요");
 
                 UpdateAllTimeLabels();
                 LoadRecentActivity();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[PageHome] LoadData 오류: {ex.Message}");
+                Debug.WriteLine($"[PageHome] LoadData 오류: {ex.Message}");
                 MessageBox.Show($"데이터 로드 실패:\n{ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -358,7 +630,6 @@ namespace XBit.Pages
 
             try
             {
-                // 최근 제출한 과제
                 var recentAssignments = _assignmentService.GetAssignmentsForUser(AuthService.CurrentUser.Id)
                     .Where(a => a.Status == "제출 완료")
                     .OrderByDescending(a => a.DueDate)
@@ -366,73 +637,78 @@ namespace XBit.Pages
 
                 foreach (var assignment in recentAssignments)
                 {
+                    var aid = assignment.Id;
                     activityList.Controls.Add(CreateActivityItem(
-                        "✅ 과제 제출 완료",
-                        assignment.Title,
-                        assignment.DueDate.ToString("yyyy-MM-dd HH:mm")
-                    ));
+                        "✅ 과제 제출 완료", assignment.Title,
+                        assignment.DueDate.ToString("MM/dd HH:mm"),
+                        () => (FindForm() as MainForm)?.NavigateTo<PageAssignmentDetail>(aid)));
                 }
 
-                // 최근 게시물
                 try
                 {
-                    var allPosts = _boardService.GetAllPosts();
-                    var recentPosts = allPosts
-                        .Where(p => p.AuthorId == AuthService.CurrentUser.Id)
-                        .OrderByDescending(p => p.CreatedDate)
-                        .Take(3);
-
+                    var allPosts = _board_service.GetAllPosts();
+                    var recentPosts = allPosts.Where(p => p.AuthorId == AuthService.CurrentUser.Id)
+                                              .OrderByDescending(p => p.CreatedDate).Take(3);
                     foreach (var post in recentPosts)
                     {
+                        var pid = post.Id;
                         activityList.Controls.Add(CreateActivityItem(
-                            "📝 게시물 작성",
-                            post.Title,
-                            post.CreatedDate.ToString("yyyy-MM-dd HH:mm")
-                        ));
+                            "📝 게시물 작성", post.Title,
+                            post.CreatedDate.ToString("MM/dd HH:mm"),
+                            () => (FindForm() as MainForm)?.NavigateTo<PagePostDetail>(pid)));
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[PageHome] 최근 게시물 로드 실패: {ex.Message}");
-                }
+                catch { }
 
                 if (activityList.Controls.Count == 0)
                 {
-                    var lblEmpty = new Label
-                    {
-                        Text = "최근 활동이 없습니다.",
-                        Font = new Font("맑은 고딕", 10f),
-                        ForeColor = Theme.FgMuted,
-                        AutoSize = true,
-                        Padding = new Padding(10)
-                    };
+                    var lblEmpty = new Label { Text = "최근 활동이 없습니다.", Font = new Font("맑은 고딕", 10f), ForeColor = Theme.FgMuted, AutoSize = true, Padding = new Padding(10) };
                     activityList.Controls.Add(lblEmpty);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[PageHome] LoadRecentActivity 오류: {ex.Message}");
+                Debug.WriteLine($"[PageHome] LoadRecentActivity 오류: {ex.Message}");
             }
         }
 
-        private Panel CreateActivityItem(string type, string title, string time)
+        private Panel CreateActivityItem(string type, string title, string time, Action navigate = null)
         {
+            bool clickable = navigate != null;
             var item = new Panel
             {
-                Width = 640,
-                Height = 50,
+                Height = 54,
                 BackColor = Theme.BgMain,
-                Margin = new Padding(0, 5, 0, 5),
-                Padding = new Padding(10)
+                Margin = new Padding(0, 3, 0, 3),
+                Padding = new Padding(0),
+                Cursor = clickable ? Cursors.Hand : Cursors.Default
             };
+
+            // TableLayoutPanel: 왼쪽(내용) / 오른쪽(시간)
+            var table = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 2,
+                Padding = new Padding(10, 6, 10, 6),
+                Margin = new Padding(0),
+                BackColor = Theme.BgMain,
+                Tag = "no-theme"
+            };
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
             var lblType = new Label
             {
                 Text = type,
-                Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
+                Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
                 ForeColor = Theme.AccentColor,
                 AutoSize = true,
-                Location = new Point(10, 5)
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.BottomLeft,
+                Tag = "no-theme"
             };
 
             var lblTitle = new Label
@@ -441,8 +717,8 @@ namespace XBit.Pages
                 Font = new Font("맑은 고딕", 10f),
                 ForeColor = Theme.FgDefault,
                 AutoSize = false,
-                Size = new Size(500, 20),
-                Location = new Point(10, 22)
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.TopLeft
             };
 
             var lblTime = new Label
@@ -451,12 +727,28 @@ namespace XBit.Pages
                 Font = new Font("맑은 고딕", 8f),
                 ForeColor = Theme.FgMuted,
                 AutoSize = true,
-                Location = new Point(520, 25)
+                TextAlign = ContentAlignment.MiddleRight,
+                Tag = "muted"
             };
 
-            item.Controls.Add(lblType);
-            item.Controls.Add(lblTitle);
-            item.Controls.Add(lblTime);
+            table.Controls.Add(lblType, 0, 0);
+            table.Controls.Add(lblTitle, 0, 1);
+            table.Controls.Add(lblTime, 1, 0);
+            table.SetRowSpan(lblTime, 2);
+
+            item.Controls.Add(table);
+
+            if (clickable)
+            {
+                EventHandler click = (s, e) => navigate();
+                item.Click += click;
+                table.Click += click;
+                foreach (Control c in table.Controls)
+                    c.Click += click;
+
+                item.MouseEnter += (s, e) => { item.BackColor = Theme.Hover; table.BackColor = Theme.Hover; };
+                item.MouseLeave += (s, e) => { item.BackColor = Theme.BgMain; table.BackColor = Theme.BgMain; };
+            }
 
             return item;
         }
@@ -467,10 +759,7 @@ namespace XBit.Pages
             if (card != null)
             {
                 var lblSub = card.Controls.OfType<Label>().FirstOrDefault(l => (l.Tag as string) == "subtitle");
-                if (lblSub != null)
-                {
-                    lblSub.Text = newText;
-                }
+                if (lblSub != null) lblSub.Text = newText;
             }
         }
 
@@ -482,10 +771,7 @@ namespace XBit.Pages
                 if (c is Panel card && card != pnlRecentActivity)
                 {
                     var lblTime = card.Controls.OfType<Label>().FirstOrDefault(l => (l.Tag as string) == "last_update");
-                    if (lblTime != null)
-                    {
-                        lblTime.Text = currentTime;
-                    }
+                    if (lblTime != null) lblTime.Text = currentTime;
                 }
             }
         }
@@ -497,79 +783,135 @@ namespace XBit.Pages
 
             switch (cardTag)
             {
-                case "card_due_today":
-                    mainForm.NavigateTo<PageAssignments>("DueToday");
-                    break;
-
-                case "card_due_week":
-                    mainForm.NavigateTo<PageAssignments>("DueThisWeek");
-                    break;
-
+                case "card_due_today": mainForm.NavigateTo<PageAssignments>("DueToday"); break;
+                case "card_due_week": mainForm.NavigateTo<PageAssignments>("DueThisWeek"); break;
                 case "card_github":
                     var githubToken = SettingsService.Current?.Integrations?.GitHubToken;
-
-                    if (string.IsNullOrWhiteSpace(githubToken))
-                    {
-                        mainForm.NavigateTo<PageSettings>("Integrations");
-                    }
-                    else
-                    {
-                        ShowGitHubSyncDialog();
-                    }
+                    if (string.IsNullOrWhiteSpace(githubToken)) mainForm.NavigateTo<PageSettings>("Integrations");
+                    else ShowGitHubSyncDialog();
                     break;
-
-                case "card_notifications":
-                    mainForm.NavigateTo<PageNotifications>();
-                    break;
-
-                case "card_board":
-                    mainForm.NavigateTo<PageBoard>();
-                    break;
-
-                case "card_tasks":
-                    mainForm.NavigateTo<PageProjectBoard>();
-                    break;
+                case "card_notifications": mainForm.NavigateTo<PageNotifications>(); break;
+                case "card_board": mainForm.NavigateTo<PageBoard>(); break;
+                case "card_tasks": mainForm.NavigateTo<PageProjectBoard>(); break;
             }
         }
 
         private async void ShowGitHubSyncDialog()
         {
-            int changedFiles = _githubService.GetChangedFilesCount();
+            int changedFiles = _github_service.GetChangedFilesCount();
+            if (changedFiles == 0) { MessageBox.Show("변경된 파일이 없습니다!", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
 
-            if (changedFiles == 0)
-            {
-                MessageBox.Show("변경된 파일이 없습니다!", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                $"변경된 파일 {changedFiles}개를\nGitHub에 업로드하시겠습니까?",
-                "GitHub 동기화",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question
-            );
-
+            var result = MessageBox.Show($"변경된 파일 {changedFiles}개를\nGitHub에 업로드하시겠습니까?", "GitHub 동기화", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result == DialogResult.Yes)
             {
-                bool success = await _githubService.SyncAllChanges();
-
+                bool success = await _github_service.SyncAllChanges();
                 if (success)
                 {
                     MessageBox.Show($"{changedFiles}개 파일 업로드 완료!", "성공", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     LoadData();
-
-                    // GitHub 동기화 성공 후 (PageHome 클래스 내)
                     var mainForm = FindForm() as MainForm;
-                    if (mainForm != null)
-                    {
-                        mainForm.UpdateSyncStatus(); // 현재 시간으로 업데이트
-                    }
+                    if (mainForm != null) mainForm.UpdateSyncStatus();
                 }
-                else
-                {
-                    MessageBox.Show("동기화 실패!\n토큰과 권한을 확인하세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                else { MessageBox.Show("동기화 실패!\n토큰과 권한을 확인하세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
+        }
+
+        private void LoadAttendanceCalendar(int year, int month, List<DateTime> activeDates)
+        {
+            if (pnlStats == null) return;
+            var dict = pnlStats.Tag as Dictionary<string, Control>;
+            if (dict == null || !dict.ContainsKey("chartPanel")) return;
+            var chartPanel = dict["chartPanel"] as Panel;
+            if (chartPanel == null) return;
+
+            var existing = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "attendanceCalendar");
+            if (existing != null) chartPanel.Controls.Remove(existing);
+
+            var donutControl = chartPanel.Controls.OfType<Control>().FirstOrDefault(c => (c.Tag as string) == "donut");
+            int calWidth = donutControl != null ? Math.Max(220, chartPanel.Width - donutControl.Width - 40) : Math.Max(300, chartPanel.Width - 40);
+            int calHeight = Math.Max(160, chartPanel.Height - 20);
+
+            var cal = new FlowLayoutPanel
+            {
+                Tag = "attendanceCalendar",
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                Width = calWidth,
+                Height = calHeight,
+                BackColor = Color.Transparent,
+                Padding = new Padding(2),
+                Margin = new Padding(0)
+            };
+
+            if (donutControl != null)
+            {
+                cal.Location = new Point(chartPanel.Width / 2 + (chartPanel.Width / 2 - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
+            }
+            else
+            {
+                cal.Location = new Point((chartPanel.Width - cal.Width) / 2, (chartPanel.Height - cal.Height) / 2);
+            }
+
+            string[] dayNames = new[] { "일", "월", "화", "수", "목", "금", "토" };
+            int cellSize = Math.Max(28, Math.Min(46, calWidth / 8));
+            foreach (var dn in dayNames)
+            {
+                var lbl = new Label
+                {
+                    Text = dn,
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Width = cellSize,
+                    Height = 20,
+                    ForeColor = Theme.FgMuted,
+                    BackColor = Color.Transparent,
+                    Margin = new Padding(2)
+                };
+                cal.Controls.Add(lbl);
+            }
+
+            var firstOfMonth = new DateTime(year, month, 1);
+            int offset = (int)firstOfMonth.DayOfWeek;
+
+            for (int i = 0; i < offset; i++)
+            {
+                var placeholder = new Panel
+                {
+                    Width = cellSize,
+                    Height = cellSize,
+                    BackColor = Color.Transparent,
+                    Margin = new Padding(2)
+                };
+                cal.Controls.Add(placeholder);
+            }
+
+            var activeSet = new HashSet<DateTime>((activeDates ?? new List<DateTime>()).Select(d => d.Date));
+
+            int daysInMonth = DateTime.DaysInMonth(year, month);
+            for (int d = 1; d <= daysInMonth; d++)
+            {
+                var dt = new DateTime(year, month, d);
+                bool isActive = activeSet.Contains(dt.Date);
+
+                var btn = new Button
+                {
+                    Text = d.ToString(),
+                    Width = cellSize,
+                    Height = cellSize,
+                    BackColor = isActive ? Theme.Success : Theme.Hover,
+                    ForeColor = isActive ? Color.White : Theme.FgMuted,
+                    FlatStyle = FlatStyle.Flat,
+                    Margin = new Padding(2),
+                    Tag = dt.Date,
+                    Enabled = false
+                };
+                btn.FlatAppearance.BorderSize = 0;
+
+                cal.Controls.Add(btn);
+            }
+
+            chartPanel.Controls.Add(cal);
+            cal.BringToFront();
         }
     }
 }

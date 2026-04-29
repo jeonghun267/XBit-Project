@@ -1,5 +1,4 @@
-﻿// Services/SettingsService.cs
-
+﻿
 using Newtonsoft.Json;
 using System;
 using System.IO;
@@ -9,7 +8,17 @@ namespace XBit.Services
 {
     public static class SettingsService
     {
-        private static readonly string SettingsFilePath = "Data/settings.json";
+        // 데이터 디렉터리: 내 문서\XBitData
+        public static string DataDirectory
+        {
+            get
+            {
+                var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                return Path.Combine(docs, "XBitData");
+            }
+        }
+
+        private static readonly string SettingsFilePath = Path.Combine(DataDirectory, "settings.json");
         private static AppSettings _currentSettings;
 
         public static AppSettings Current
@@ -27,8 +36,19 @@ namespace XBit.Services
         public static void Initialize()
         {
             System.Diagnostics.Debug.WriteLine("[SettingsService] 초기화 시작");
+            // 디렉터리 보장
+            try
+            {
+                if (!Directory.Exists(DataDirectory))
+                    Directory.CreateDirectory(DataDirectory);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SettingsService] DataDirectory 생성 실패: {ex.Message}");
+            }
+
             _currentSettings = Load();
-            
+
             // Theme 초기화
             ApplyTheme();
         }
@@ -97,7 +117,7 @@ namespace XBit.Services
         private static void ApplyTheme()
         {
             string themeName = Current.Appearance.Theme;
-            
+
             if (Enum.TryParse<AppTheme>(themeName, out AppTheme themeEnum))
             {
                 Theme.Set(themeEnum);

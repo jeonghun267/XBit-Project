@@ -12,6 +12,8 @@ namespace XBit.Services
     {
         public static User CurrentUser { get; private set; }
 
+        public static event Action UserUpdated;
+
         // ⭐️ SHA256 해싱 메서드
         public static string HashPassword(string password)
         {
@@ -153,6 +155,7 @@ namespace XBit.Services
                     if (CurrentUser != null && CurrentUser.Id == user.Id)
                     {
                         CurrentUser = user;
+                        UserUpdated?.Invoke();
                     }
 
                     return true;

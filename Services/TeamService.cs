@@ -1,4 +1,4 @@
-// XBit/Services/TeamService.cs
+ï»¿// XBit/Services/TeamService.cs
 
 using System;
 using System.Collections.Generic;
@@ -10,17 +10,17 @@ namespace XBit.Services
 {
     public class TeamService
     {
-        // ÆÀ »ı¼º
+        // íŒ€ ìƒì„±
         public int CreateTeam(string teamName, int ownerId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 conn.Open();
-                
-                // 1. ÆÀ »ı¼º
+
+                // 1. íŒ€ ìƒì„±
                 string sql = "INSERT INTO Teams (Name, OwnerId, CreatedDate) VALUES (@name, @owner, @date); SELECT last_insert_rowid();";
                 int teamId;
-                
+
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@name", teamName);
@@ -28,19 +28,19 @@ namespace XBit.Services
                     cmd.Parameters.AddWithValue("@date", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                     teamId = Convert.ToInt32(cmd.ExecuteScalar());
                 }
-                
-                // 2. »ı¼ºÀÚ¸¦ Owner·Î Ãß°¡
+
+                // 2. ìƒì„±ìë¥¼ Ownerë¡œ ì¶”ê°€
                 AddMember(teamId, ownerId, "Owner");
-                
+
                 return teamId;
             }
         }
 
-        // ÆÀ ¸ñ·Ï °¡Á®¿À±â (»ç¿ëÀÚ°¡ ¼ÓÇÑ ÆÀ)
+        // íŒ€ ëª©ë¡ ê°€ì ¸ì˜¤ê¸° (ì‚¬ìš©ìê°€ ì†í•œ íŒ€)
         public List<Team> GetTeamsByUser(int userId)
         {
             var teams = new List<Team>();
-            
+
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 conn.Open();
@@ -50,11 +50,11 @@ namespace XBit.Services
                     INNER JOIN TeamMembers tm ON t.Id = tm.TeamId
                     WHERE tm.UserId = @uid
                     ORDER BY t.CreatedDate DESC";
-                
+
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@uid", userId);
-                    
+
                     using (var reader = cmd.ExecuteReader())
                     {
                         while (reader.Read())
@@ -70,11 +70,11 @@ namespace XBit.Services
                     }
                 }
             }
-            
+
             return teams;
         }
 
-        // ¸â¹ö Ãß°¡
+        // ë©¤ë²„ ì¶”ê°€
         public bool AddMember(int teamId, int userId, string role = "Member")
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -83,27 +83,27 @@ namespace XBit.Services
                 {
                     conn.Open();
                     string sql = "INSERT INTO TeamMembers (TeamId, UserId, Role, JoinedDate) VALUES (@tid, @uid, @role, @date)";
-                    
+
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@tid", teamId);
                         cmd.Parameters.AddWithValue("@uid", userId);
                         cmd.Parameters.AddWithValue("@role", role);
                         cmd.Parameters.AddWithValue("@date", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                        
+
                         cmd.ExecuteNonQuery();
                     }
-                    
-                    // ?? ¾Ë¸² »ı¼º
+
+                    // ?? ì•Œë¦¼ ìƒì„±
                     string teamName = GetTeamName(teamId);
                     NotificationService.Create(
-                        userId, 
-                        "ÆÀ ÃÊ´ë", 
-                        $"'{teamName}' ÆÀ¿¡ ÃÊ´ëµÇ¾ú½À´Ï´Ù!",
+                        userId,
+                        "íŒ€ ì´ˆëŒ€",
+                        $"'{teamName}' íŒ€ì— ì´ˆëŒ€ë˜ì—ˆìŠµë‹ˆë‹¤!",
                         "Team",
                         teamId
                     );
-                    
+
                     return true;
                 }
                 catch (SQLiteException)
@@ -122,16 +122,16 @@ namespace XBit.Services
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@tid", teamId);
-                    return cmd.ExecuteScalar()?.ToString() ?? "¾Ë ¼ö ¾ø´Â ÆÀ";
+                    return cmd.ExecuteScalar()?.ToString() ?? "ì•Œ ìˆ˜ ì—†ëŠ” íŒ€";
                 }
             }
         }
 
-        // ÆÀ ¸â¹ö ¸ñ·Ï
+        // íŒ€ ë©¤ë²„ ëª©ë¡
         public List<TeamMember> GetTeamMembers(int teamId)
         {
             var members = new List<TeamMember>();
-            
+
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
             {
                 conn.Open();
@@ -147,11 +147,11 @@ namespace XBit.Services
                             ELSE 3
                         END,
                         tm.JoinedDate";
-                
+
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@tid", teamId);
-                    
+
                     using (var reader = cmd.ExecuteReader())
                     {
                         while (reader.Read())
@@ -170,11 +170,11 @@ namespace XBit.Services
                     }
                 }
             }
-            
+
             return members;
         }
 
-        // ¸â¹ö Á¦°Å
+        // ë©¤ë²„ ì œê±°
         public bool RemoveMember(int teamId, int userId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -183,12 +183,12 @@ namespace XBit.Services
                 {
                     conn.Open();
                     string sql = "DELETE FROM TeamMembers WHERE TeamId = @tid AND UserId = @uid AND Role != 'Owner'";
-                    
+
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@tid", teamId);
                         cmd.Parameters.AddWithValue("@uid", userId);
-                        
+
                         return cmd.ExecuteNonQuery() > 0;
                     }
                 }
@@ -199,7 +199,7 @@ namespace XBit.Services
             }
         }
 
-        // ÆÀ »èÁ¦
+        // íŒ€ ì‚­ì œ
         public bool DeleteTeam(int teamId, int requestUserId)
         {
             using (var conn = new SQLiteConnection(DatabaseManager.ConnectionString))
@@ -207,26 +207,26 @@ namespace XBit.Services
                 try
                 {
                     conn.Open();
-                    
-                    // Owner¸¸ »èÁ¦ °¡´É
+
+                    // Ownerë§Œ ì‚­ì œ ê°€ëŠ¥
                     string checkSql = "SELECT OwnerId FROM Teams WHERE Id = @tid";
                     using (var cmd = new SQLiteCommand(checkSql, conn))
                     {
                         cmd.Parameters.AddWithValue("@tid", teamId);
                         var ownerId = cmd.ExecuteScalar();
-                        
+
                         if (ownerId == null || Convert.ToInt32(ownerId) != requestUserId)
                             return false;
                     }
-                    
-                    // ÆÀ »èÁ¦ (CASCADE·Î ¸â¹öµµ ÀÚµ¿ »èÁ¦)
+
+                    // íŒ€ ì‚­ì œ (CASCADEë¡œ ë©¤ë²„ë„ ìë™ ì‚­ì œ)
                     string sql = "DELETE FROM Teams WHERE Id = @tid";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@tid", teamId);
                         cmd.ExecuteNonQuery();
                     }
-                    
+
                     return true;
                 }
                 catch

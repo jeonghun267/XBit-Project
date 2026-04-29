@@ -1,5 +1,4 @@
-﻿// XBit/Services/DatabaseManager.cs (디버그 로그 추가 버전)
-
+﻿
 using System;
 using System.Data.SQLite;
 using System.IO;
@@ -10,12 +9,33 @@ namespace XBit.Services
 {
     public static class DatabaseManager
     {
-        private static readonly string DbFile = "Data/xbit.sqlite";
+        // 데이터 디렉터리 및 DB 파일을 내 문서\XBitData로 이동
+        public static string DataDirectory
+        {
+            get
+            {
+                var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                return Path.Combine(docs, "XBitData");
+            }
+        }
+
+        private static readonly string DbFileName = "xbit.sqlite";
         public static string ConnectionString { get; private set; }
 
         public static void Initialize()
         {
-            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DbFile);
+            // 폴더 보장
+            try
+            {
+                if (!Directory.Exists(DataDirectory))
+                    Directory.CreateDirectory(DataDirectory);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB] DataDirectory 생성 실패: {ex.Message}");
+            }
+
+            string dbPath = Path.Combine(DataDirectory, DbFileName);
             ConnectionString = $"Data Source={dbPath};Version=3;";
 
             System.Diagnostics.Debug.WriteLine($"[DB] 초기화 시작 - 경로: {dbPath}");
@@ -39,16 +59,21 @@ namespace XBit.Services
             }
 
             CreateTables();
+
+            // 마이그레이션을 먼저 적용하여 누락된 컬럼을 보장한 뒤 인덱스를 생성합니다.
+            ApplyMigrations();
+
             CreateIndexes();
+
             AddInitialDataIfNeeded();
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 초기화 완료!");
         }
 
         private static void CreateTables()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 시작...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -104,7 +129,7 @@ namespace XBit.Services
                     );";
                 using (var cmd = new SQLiteCommand(sqlComments, conn)) { cmd.ExecuteNonQuery(); }
 
-                // 5. Tasks 테이블
+                // 5. Tasks 테이블 (TeamId FK 추가)
                 string sqlTasks = @"
                     CREATE TABLE IF NOT EXISTS Tasks (
                         Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +138,8 @@ namespace XBit.Services
                         Priority INTEGER NOT NULL,
                         Status TEXT NOT NULL,
                         TeamId INTEGER NOT NULL,
-                        CreatedDate TEXT NOT NULL
+                        CreatedDate TEXT NOT NULL,
+                        FOREIGN KEY(TeamId) REFERENCES Teams(Id)
                     );";
                 using (var cmd = new SQLiteCommand(sqlTasks, conn)) { cmd.ExecuteNonQuery(); }
 
@@ -156,15 +182,29 @@ namespace XBit.Services
                         FOREIGN KEY(UserId) REFERENCES Users(Id)
                     );";
                 using (var cmd = new SQLiteCommand(sqlNotifications, conn)) { cmd.ExecuteNonQuery(); }
+
+                // 9. CommentLikes 테이블 (반응 저장: ReactionType 포함)
+                string sqlCreateCommentLikes = @"
+                    CREATE TABLE IF NOT EXISTS CommentLikes (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        CommentId INTEGER NOT NULL,
+                        UserId INTEGER NOT NULL,
+                        ReactionType INTEGER NOT NULL DEFAULT 1, -- 1: 좋아요, 0: 싫어요 등
+                        CreatedDate TEXT NOT NULL,
+                        FOREIGN KEY(CommentId) REFERENCES Comments(Id),
+                        FOREIGN KEY(UserId) REFERENCES Users(Id),
+                        UNIQUE(CommentId, UserId)
+                    );";
+                using (var cmd = new SQLiteCommand(sqlCreateCommentLikes, conn)) { cmd.ExecuteNonQuery(); }
             }
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 테이블 생성 완료!");
         }
 
         private static void CreateIndexes()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 시작...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -180,25 +220,171 @@ namespace XBit.Services
                     "CREATE INDEX IF NOT EXISTS idx_teammembers_teamid ON TeamMembers(TeamId);",
                     "CREATE INDEX IF NOT EXISTS idx_teammembers_userid ON TeamMembers(UserId);",
                     "CREATE INDEX IF NOT EXISTS idx_notifications_userid ON Notifications(UserId);",
-                    "CREATE INDEX IF NOT EXISTS idx_notifications_isread ON Notifications(UserId, IsRead);"
+                    "CREATE INDEX IF NOT EXISTS idx_notifications_isread ON Notifications(UserId, IsRead);",
+                    // CommentLikes 관련 인덱스
+                    "CREATE INDEX IF NOT EXISTS idx_commentlikes_commentid ON CommentLikes(CommentId);",
+                    "CREATE INDEX IF NOT EXISTS idx_commentlikes_userid ON CommentLikes(UserId);",
+                    // ReactionType 컬럼이 없는 구 DB 환경 대비 조건부 생성
+                    "CREATE INDEX IF NOT EXISTS idx_commentlikes_commentid_reaction ON CommentLikes(CommentId, ReactionType);"
                 };
 
                 foreach (var sql in indexes)
                 {
-                    using (var cmd = new SQLiteCommand(sql, conn))
+                    try
                     {
-                        cmd.ExecuteNonQuery();
+                        // ReactionType 컬럼을 사용하는 인덱스는 컬럼 존재 여부를 확인
+                        if (sql.Contains("idx_commentlikes_commentid_reaction"))
+                        {
+                            if (!TableHasColumn(conn, "CommentLikes", "ReactionType"))
+                            {
+                                System.Diagnostics.Debug.WriteLine("[DB] idx_commentlikes_commentid_reaction 스킵(ReactionType 컬럼 없음)");
+                                continue;
+                            }
+                        }
+
+                        using (var cmd = new SQLiteCommand(sql, conn))
+                        {
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // 인덱스 생성 실패해도 전체 초기화가 중단되지 않도록 로깅 후 계속 진행
+                        System.Diagnostics.Debug.WriteLine($"[DB] 인덱스 생성 중 오류(문장: {sql}): {ex.Message}");
                     }
                 }
             }
-            
+
             System.Diagnostics.Debug.WriteLine("[DB] 인덱스 생성 완료!");
+        }
+
+        // 마이그레이션: ReactionType 컬럼 보장 등
+        private static void ApplyMigrations()
+        {
+            System.Diagnostics.Debug.WriteLine("[DB] 마이그레이션 적용 시작...");
+
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnectionString))
+                {
+                    conn.Open();
+
+                    // Assignments
+                    EnsureColumnExists(conn, "Assignments", "SubmissionUrl TEXT");
+                    EnsureColumnExists(conn, "Assignments", "SubmissionNote TEXT");
+
+                    // Notifications
+                    EnsureColumnExists(conn, "Notifications", "Severity TEXT DEFAULT 'Info'");
+                    EnsureColumnExists(conn, "Notifications", "Icon TEXT");
+
+                    // Comments 개선
+                    EnsureColumnExists(conn, "Comments", "ParentCommentId INTEGER");
+                    EnsureColumnExists(conn, "Comments", "IsEdited INTEGER DEFAULT 0");
+                    EnsureColumnExists(conn, "Comments", "EditedDate TEXT");
+
+                    // CommentLikes 테이블(기본 생성) 및 ReactionType 컬럼 보장
+                    using (var cmd = new SQLiteCommand(conn))
+                    {
+                        string sqlCreateCommentLikes = @"
+                            CREATE TABLE IF NOT EXISTS CommentLikes (
+                                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                CommentId INTEGER NOT NULL,
+                                UserId INTEGER NOT NULL,
+                                ReactionType INTEGER NOT NULL DEFAULT 1,
+                                CreatedDate TEXT NOT NULL,
+                                FOREIGN KEY(CommentId) REFERENCES Comments(Id),
+                                FOREIGN KEY(UserId) REFERENCES Users(Id),
+                                UNIQUE(CommentId, UserId)
+                            );";
+                        cmd.CommandText = sqlCreateCommentLikes;
+                        cmd.ExecuteNonQuery();
+                        System.Diagnostics.Debug.WriteLine("[DB] 테이블 확인/생성: CommentLikes");
+                    }
+
+                    // ReactionType 컬럼이 누락된 구 버전 대비 보장
+                    EnsureColumnExists(conn, "CommentLikes", "ReactionType INTEGER NOT NULL DEFAULT 1");
+
+                    // 추가 마이그레이션은 여기에...
+                }
+
+                System.Diagnostics.Debug.WriteLine("[DB] 마이그레이션 적용 완료!");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB] 마이그레이션 중 오류: {ex.Message}");
+            }
+        }
+
+        private static void EnsureColumnExists(SQLiteConnection conn, string tableName, string columnDefinition)
+        {
+            if (conn == null) return;
+            try
+            {
+                var parts = columnDefinition.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0) return;
+                var columnName = parts[0];
+
+                using (var cmd = new SQLiteCommand($"PRAGMA table_info([{tableName}]);", conn))
+                {
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var existing = reader["name"] as string;
+                            if (!string.IsNullOrEmpty(existing) && string.Equals(existing, columnName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DB] 컬럼 존재: {tableName}.{columnName}");
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                string alterSql = $"ALTER TABLE [{tableName}] ADD COLUMN {columnDefinition};";
+                using (var alterCmd = new SQLiteCommand(alterSql, conn))
+                {
+                    alterCmd.ExecuteNonQuery();
+                }
+                System.Diagnostics.Debug.WriteLine($"[DB] 컬럼 추가: {tableName}.{columnName}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB] EnsureColumnExists 예외 ({tableName}): {ex.Message}");
+            }
+        }
+
+        // 테이블에 특정 컬럼이 존재하는지 검사 (CreateIndexes에서 사용)
+        private static bool TableHasColumn(SQLiteConnection conn, string tableName, string columnName)
+        {
+            if (conn == null) return false;
+            try
+            {
+                using (var cmd = new SQLiteCommand($"PRAGMA table_info([{tableName}]);", conn))
+                {
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var existing = reader["name"] as string;
+                            if (!string.IsNullOrEmpty(existing) && string.Equals(existing, columnName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DB] TableHasColumn 예외 ({tableName}.{columnName}): {ex.Message}");
+            }
+            return false;
         }
 
         private static void AddInitialDataIfNeeded()
         {
             System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 확인 중...");
-            
+
             using (var conn = new SQLiteConnection(ConnectionString))
             {
                 conn.Open();
@@ -219,12 +405,10 @@ namespace XBit.Services
                     if (userCount == 0)
                     {
                         System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 시작!");
-                        
-                        // 비밀번호 해싱
+
                         string hashedPassword = AuthService.HashPassword("1234");
                         System.Diagnostics.Debug.WriteLine($"[DB] 해싱된 비밀번호: {hashedPassword.Substring(0, 10)}...");
-                        
-                        // 사용자 추가
+
                         string userSql = "INSERT INTO Users (Username, PasswordHash, Name, Role) VALUES (@u, @p, @n, @r); SELECT last_insert_rowid();";
                         int userId;
                         using (var cmd = new SQLiteCommand(userSql, conn))
@@ -235,23 +419,19 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@r", (int)UserRole.Admin);
                             userId = Convert.ToInt32(cmd.ExecuteScalar());
                         }
-                        
+
                         System.Diagnostics.Debug.WriteLine($"[DB] 사용자 생성됨 - ID: {userId}");
 
-                        // 과제 추가
                         string assignmentSql = "INSERT INTO Assignments (Course, Title, DueDate, Status, UserId) VALUES (@c, @t, @d, @s, @uid)";
                         using (var cmd = new SQLiteCommand(assignmentSql, conn))
                         {
-                            // 과제 1
                             cmd.Parameters.AddWithValue("@c", "XR Lab");
                             cmd.Parameters.AddWithValue("@t", "포털 UI 프로토 (긴급)");
                             cmd.Parameters.AddWithValue("@d", DateTime.Now.AddHours(12).ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.Parameters.AddWithValue("@s", "미제출");
                             cmd.Parameters.AddWithValue("@uid", userId);
                             cmd.ExecuteNonQuery();
-                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 1 추가됨 (UserId: {userId})");
 
-                            // 과제 2
                             cmd.Parameters.Clear();
                             cmd.Parameters.AddWithValue("@c", "Unity3D");
                             cmd.Parameters.AddWithValue("@t", "캐릭터 상호작용");
@@ -259,9 +439,7 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@s", "제출");
                             cmd.Parameters.AddWithValue("@uid", userId);
                             cmd.ExecuteNonQuery();
-                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 2 추가됨 (UserId: {userId})");
-                            
-                            // 과제 3 (추가)
+
                             cmd.Parameters.Clear();
                             cmd.Parameters.AddWithValue("@c", "C# WinForms");
                             cmd.Parameters.AddWithValue("@t", "대시보드 UI 개선");
@@ -269,10 +447,8 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@s", "미제출");
                             cmd.Parameters.AddWithValue("@uid", userId);
                             cmd.ExecuteNonQuery();
-                            System.Diagnostics.Debug.WriteLine($"[DB] 과제 3 추가됨 (UserId: {userId})");
                         }
 
-                        // 게시글 추가
                         string postSql = "INSERT INTO Posts (Title, Content, AuthorId, CreatedDate) VALUES (@t, @c, @aid, @cd)";
                         using (var cmd = new SQLiteCommand(postSql, conn))
                         {
@@ -282,7 +458,7 @@ namespace XBit.Services
                             cmd.Parameters.AddWithValue("@cd", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                             cmd.ExecuteNonQuery();
                         }
-                        
+
                         System.Diagnostics.Debug.WriteLine("[DB] 초기 데이터 생성 완료!");
                     }
                     else
@@ -291,11 +467,46 @@ namespace XBit.Services
                     }
                 }
             }
-        }   
+        }
 
+        // 간단한 DB 정보 덤프 (디버그용)
         public static string DumpDatabaseInfo()
         {
-            return "";
+            var sb = new StringBuilder();
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnectionString))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name;", conn))
+                    {
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                var name = reader.GetString(0);
+                                var type = reader.GetString(1);
+                                int count = 0;
+                                try
+                                {
+                                    using (var c = new SQLiteCommand($"SELECT COUNT(1) FROM [{name}];", conn))
+                                    {
+                                        var res = c.ExecuteScalar();
+                                        count = res != null ? Convert.ToInt32(res) : 0;
+                                    }
+                                }
+                                catch { /* ignore */ }
+                                sb.AppendLine($"{type}: {name} (rows: {count})");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"Dump error: {ex.Message}");
+            }
+            return sb.ToString();
         }
     }
 }
